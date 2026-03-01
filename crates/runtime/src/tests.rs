@@ -220,7 +220,7 @@ impl Tool for SlowTool {
         _args: &str,
         _context: &ToolExecutionContext,
     ) -> Result<String, ToolError> {
-        sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(200)).await;
         Ok("done".to_owned())
     }
 
@@ -1754,10 +1754,10 @@ async fn run_session_executes_readonly_tools_in_parallel() {
         .unwrap();
     let elapsed = start.elapsed();
 
-    // SlowTool sleeps for 50ms. Two sequential would take > 100ms.
-    // Parallel should take ~50ms. We give it some buffer for setup/teardown.
+    // SlowTool sleeps for 200ms. Two sequential would take > 400ms.
+    // Parallel should take ~200ms. We give it some buffer for setup/teardown.
     assert!(
-        elapsed < Duration::from_millis(90),
+        elapsed < Duration::from_millis(380),
         "Took {:?}, not parallel!",
         elapsed
     );

@@ -854,12 +854,15 @@ fn short_temp_dir(label: &str) -> PathBuf {
 
 fn wait_for_file(path: &Path) {
     for _ in 0..100 {
-        if path.exists() {
+        if let Ok(metadata) = fs::metadata(path)
+            && metadata.is_file()
+            && metadata.len() > 0
+        {
             return;
         }
         thread::sleep(std::time::Duration::from_millis(20));
     }
-    panic!("timed out waiting for file `{}`", path.display());
+    panic!("timed out waiting for non-empty file `{}`", path.display());
 }
 
 async fn send_control_request(
