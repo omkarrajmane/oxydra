@@ -7,6 +7,11 @@
  *  - Optional: same as standard but with an enable/disable toggle.
  *  - Collection: uses CollectionEditor for dynamic map/array entries.
  *
+ * Supports:
+ *  - Group headers: sections with `group_label` get a group heading above them.
+ *  - Custom toggle labels: `toggle_on_label`/`toggle_off_label` for optional sections.
+ *  - Setup-required indicators: fields with `setup_required` show a status badge.
+ *
  * Exposed as window.SectionRenderer.
  */
 window.SectionRenderer = (function () {
@@ -40,11 +45,26 @@ window.SectionRenderer = (function () {
    *                                         for optional sections.
    * @param {boolean}  [opts.startExpanded]  Start expanded? Default: true.
    * @param {string}   [opts.idPrefix]       ID prefix for fields.
-   * @returns {{ element, getValues, setValues, widgets }}
+   * @returns {{ element, getValues, setValues, widgets, groupHeader }}
    */
   function renderSection(section, values, opts) {
     opts = opts || {};
     var startExpanded = opts.startExpanded !== false;
+
+    // ── Group header (rendered separately, caller inserts before card) ───
+    var groupHeader = null;
+    if (section.group_label) {
+      groupHeader = el('div', 'sr-group-header');
+      var groupTitle = el('span', 'sr-group-title');
+      groupTitle.textContent = section.group_label;
+      groupHeader.appendChild(groupTitle);
+
+      if (section.group_description) {
+        var groupDesc = el('span', 'sr-group-description');
+        groupDesc.textContent = section.group_description;
+        groupHeader.appendChild(groupDesc);
+      }
+    }
 
     var card = el('div', 'sr-section');
     card.dataset.sectionId = section.id;
@@ -78,6 +98,10 @@ window.SectionRenderer = (function () {
     var sectionEnabled = true;
     if (section.optional_section) {
       sectionEnabled = hasAnyValues(section, values);
+
+      var onLabel = section.toggle_on_label || 'Enabled';
+      var offLabel = section.toggle_off_label || 'Disabled';
+
       var toggleWrap = el('div', 'sr-toggle-wrap');
       toggleWrap.addEventListener('click', function (e) { e.stopPropagation(); });
       var toggleLabel = el('label', 'fr-toggle fr-toggle-sm');
@@ -87,11 +111,11 @@ window.SectionRenderer = (function () {
       toggleInput.setAttribute('aria-label', 'Enable ' + section.label);
       var toggleSlider = el('span', 'fr-toggle-slider');
       var toggleText = el('span', 'fr-toggle-text');
-      toggleText.textContent = sectionEnabled ? 'Enabled' : 'Disabled';
+      toggleText.textContent = sectionEnabled ? onLabel : offLabel;
 
       toggleInput.addEventListener('change', function () {
         sectionEnabled = toggleInput.checked;
-        toggleText.textContent = sectionEnabled ? 'Enabled' : 'Disabled';
+        toggleText.textContent = sectionEnabled ? onLabel : offLabel;
         body.style.display = sectionEnabled && isExpanded ? '' : 'none';
         if (opts.onToggleSection) opts.onToggleSection(section.id, sectionEnabled);
       });
@@ -137,6 +161,7 @@ window.SectionRenderer = (function () {
       card.appendChild(body);
       return {
         element: card,
+        groupHeader: groupHeader,
         getValues: function () { return {}; },
         setValues: function () {},
         widgets: widgets,
@@ -184,6 +209,7 @@ window.SectionRenderer = (function () {
 
     return {
       element: card,
+      groupHeader: groupHeader,
       widgets: widgets,
       isEnabled: function () { return sectionEnabled; },
       getValues: function () {

@@ -66,6 +66,13 @@ window.FormRenderer = (function () {
       star.textContent = ' *';
       label.appendChild(star);
     }
+    if (schema.setup_required) {
+      var badge = el('span', 'fr-setup-badge');
+      var isSet = value != null && value !== '' && value !== undefined;
+      badge.className = 'fr-setup-badge ' + (isSet ? 'fr-setup-badge-set' : 'fr-setup-badge-needed');
+      badge.textContent = isSet ? 'Set' : 'Required';
+      label.appendChild(badge);
+    }
     container.appendChild(label);
 
     // ── Description ─────────────────────────────────────────────
@@ -146,7 +153,9 @@ window.FormRenderer = (function () {
     input.type = 'text';
     input.id = fieldId;
     input.value = value != null ? String(value) : '';
-    if (schema.nullable && value == null) {
+    if (schema.placeholder) {
+      input.placeholder = schema.placeholder;
+    } else if (schema.nullable && value == null) {
       input.placeholder = 'Not set';
     }
     setAria(input, descId);
@@ -208,7 +217,11 @@ window.FormRenderer = (function () {
       input.value = value;
     } else {
       input.value = '';
-      if (schema.nullable) input.placeholder = 'Not set';
+      if (schema.placeholder) {
+        input.placeholder = schema.placeholder;
+      } else if (schema.nullable) {
+        input.placeholder = 'Not set';
+      }
     }
 
     input.addEventListener('input', function () {
@@ -592,6 +605,7 @@ window.FormRenderer = (function () {
     var isCustomMode = false;
     var currentValue = value != null ? String(value) : '';
     var isOpen = false;
+    var providerFilter = ''; // empty = show all
 
     // ── Trigger button ──────────────────────────────────────────
     var trigger = el('button', 'fr-mp-trigger text-input');
@@ -603,6 +617,34 @@ window.FormRenderer = (function () {
     // ── Dropdown panel ──────────────────────────────────────────
     var dropdown = el('div', 'fr-mp-dropdown');
     dropdown.style.display = 'none';
+
+    // Provider filter dropdown
+    var filterRow = el('div', 'fr-mp-filter-row');
+    var filterSelect = el('select', 'text-input fr-mp-filter-select');
+    var allOption = el('option');
+    allOption.value = '';
+    allOption.textContent = 'All providers';
+    filterSelect.appendChild(allOption);
+
+    // Collect unique provider IDs from catalog
+    var providerIds = [];
+    catalog.forEach(function (p) {
+      if (providerIds.indexOf(p.id) === -1) {
+        providerIds.push(p.id);
+        var pOpt = el('option');
+        pOpt.value = p.id;
+        pOpt.textContent = p.name || p.id;
+        filterSelect.appendChild(pOpt);
+      }
+    });
+
+    filterSelect.value = providerFilter;
+    filterSelect.addEventListener('change', function () {
+      providerFilter = filterSelect.value;
+      renderModelList(searchInput.value.toLowerCase());
+    });
+    filterRow.appendChild(filterSelect);
+    dropdown.appendChild(filterRow);
 
     // Search input
     var searchInput = el('input', 'fr-mp-search text-input');
@@ -751,6 +793,8 @@ window.FormRenderer = (function () {
       listContainer.innerHTML = '';
       var grouped = {};
       allModels.forEach(function (m) {
+        // Apply provider filter
+        if (providerFilter && m.provider !== providerFilter) return;
         if (query) {
           var text = (m.id + ' ' + m.name + ' ' + m.providerName).toLowerCase();
           if (text.indexOf(query) === -1) return;
@@ -759,15 +803,15 @@ window.FormRenderer = (function () {
         grouped[m.provider].models.push(m);
       });
 
-      var providerIds = Object.keys(grouped);
-      if (providerIds.length === 0) {
+      var pids = Object.keys(grouped);
+      if (pids.length === 0) {
         var empty = el('div', 'fr-mp-empty');
         empty.textContent = query ? 'No models match your search.' : 'No models available.';
         listContainer.appendChild(empty);
         return;
       }
 
-      providerIds.forEach(function (pid) {
+      pids.forEach(function (pid) {
         var group = grouped[pid];
         var header = el('div', 'fr-mp-group-header');
         header.textContent = group.name || pid;
@@ -820,6 +864,14 @@ window.FormRenderer = (function () {
           showCustomInput();
         } else {
           updateTriggerText();
+        }
+      },
+      setProviderFilter: function (catalogProvider) {
+        providerFilter = catalogProvider || '';
+        filterSelect.value = providerFilter;
+        // Re-render list if dropdown is open
+        if (isOpen) {
+          renderModelList(searchInput.value.toLowerCase());
         }
       },
     };

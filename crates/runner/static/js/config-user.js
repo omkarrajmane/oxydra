@@ -87,6 +87,30 @@ window.UserConfigEditor = (function () {
     var sectionInstances = {};
     var collectionInstances = {};
 
+    // Track the last rendered group for inserting group headers
+    var lastGroup = null;
+
+    // ── Insert group header if needed ───────────────────────────
+
+    function insertGroupHeader(parent, sectionSchema) {
+      var group = sectionSchema.group;
+      if (group && group !== lastGroup) {
+        lastGroup = group;
+        if (sectionSchema.group_label) {
+          var groupHeader = el('div', 'sr-group-header');
+          var groupTitle = el('span', 'sr-group-title');
+          groupTitle.textContent = sectionSchema.group_label;
+          groupHeader.appendChild(groupTitle);
+          if (sectionSchema.group_description) {
+            var groupDesc = el('span', 'sr-group-description');
+            groupDesc.textContent = sectionSchema.group_description;
+            groupHeader.appendChild(groupDesc);
+          }
+          parent.appendChild(groupHeader);
+        }
+      }
+    }
+
     // ── Render each section ─────────────────────────────────────
 
     (schema.sections || []).forEach(function (sectionSchema) {
@@ -111,6 +135,8 @@ window.UserConfigEditor = (function () {
     // ── Standard section rendering ──────────────────────────────
 
     function renderStandardSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
       var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
         onChange: function (path, newValue) {
@@ -136,6 +162,8 @@ window.UserConfigEditor = (function () {
     // ── Collection section rendering (credential_refs) ──────────
 
     function renderCollectionSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
       var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
         onChange: function () {},
@@ -167,6 +195,8 @@ window.UserConfigEditor = (function () {
     // ── Telegram section with sender bindings ───────────────────
 
     function renderTelegramSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
       // Separate senders from other fields
       var regularFields = [];
       var sendersField = null;

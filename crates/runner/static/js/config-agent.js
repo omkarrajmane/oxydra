@@ -5,6 +5,10 @@
  * proper input widgets, collection editors for providers/agents, and
  * catalog integration.
  *
+ * Supports:
+ *  - Group headers for organizing related sections under common headings.
+ *  - Provider→model picker filter wiring for the selection section.
+ *
  * Exposed as window.AgentConfigEditor.
  */
 window.AgentConfigEditor = (function () {
@@ -90,6 +94,9 @@ window.AgentConfigEditor = (function () {
     var sectionInstances = {};
     var collectionInstances = {};
 
+    // Track the last rendered group for inserting group headers
+    var lastGroup = null;
+
     // ── Render each section ─────────────────────────────────────
 
     (schema.sections || []).forEach(function (sectionSchema) {
@@ -105,15 +112,41 @@ window.AgentConfigEditor = (function () {
       } else if (sectionSchema.id === 'catalog') {
         // Special catalog section with status card and refresh button
         renderCatalogSection(container, sectionSchema, config, opts);
+      } else if (sectionSchema.id === 'selection') {
+        // Selection section with provider→model wiring
+        renderSelectionSection(container, sectionSchema, config, opts);
       } else {
         // Standard or optional section
         renderStandardSection(container, sectionSchema, config, opts);
       }
     });
 
+    // ── Insert group header if needed ───────────────────────────
+
+    function insertGroupHeader(parent, sectionSchema) {
+      var group = sectionSchema.group;
+      if (group && group !== lastGroup) {
+        lastGroup = group;
+        if (sectionSchema.group_label) {
+          var groupHeader = el('div', 'sr-group-header');
+          var groupTitle = el('span', 'sr-group-title');
+          groupTitle.textContent = sectionSchema.group_label;
+          groupHeader.appendChild(groupTitle);
+          if (sectionSchema.group_description) {
+            var groupDesc = el('span', 'sr-group-description');
+            groupDesc.textContent = sectionSchema.group_description;
+            groupHeader.appendChild(groupDesc);
+          }
+          parent.appendChild(groupHeader);
+        }
+      }
+    }
+
     // ── Standard section rendering ──────────────────────────────
 
     function renderStandardSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
       var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
         catalog: renderOpts.catalog,
@@ -137,9 +170,73 @@ window.AgentConfigEditor = (function () {
       parent.appendChild(sectionResult.element);
     }
 
+    // ── Selection section with provider→model wiring ────────────
+
+    function renderSelectionSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
+      var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
+        dynamicSources: renderOpts.dynamicSources,
+        catalog: renderOpts.catalog,
+        onChange: function (path, newValue) {
+          changes[path] = newValue;
+
+          // Wire provider → model picker filter
+          if (path === 'selection.provider' && sectionResult.widgets['selection.model']) {
+            var modelWidget = sectionResult.widgets['selection.model'];
+            var catalogProvider = resolveProviderCatalogId(newValue, configValues, renderOpts);
+            if (modelWidget.setProviderFilter) {
+              modelWidget.setProviderFilter(catalogProvider);
+            }
+          }
+        },
+        startExpanded: true,
+        idPrefix: sectionSchema.id,
+      });
+
+      sectionInstances[sectionSchema.id] = sectionResult;
+      parent.appendChild(sectionResult.element);
+
+      // Set initial provider filter on the model picker
+      var currentProvider = resolveValue('selection.provider', configValues);
+      if (currentProvider && sectionResult.widgets['selection.model']) {
+        var modelWidget = sectionResult.widgets['selection.model'];
+        var catalogProvider = resolveProviderCatalogId(currentProvider, configValues, renderOpts);
+        if (modelWidget.setProviderFilter) {
+          modelWidget.setProviderFilter(catalogProvider);
+        }
+      }
+    }
+
+    /**
+     * Resolve a provider registry name to its catalog provider ID.
+     * Looks up the provider in the current config to find catalog_provider
+     * or infers it from provider_type.
+     */
+    function resolveProviderCatalogId(providerName, configValues, renderOpts) {
+      if (!providerName) return '';
+      var registry = (configValues.providers && configValues.providers.registry) || {};
+      var entry = registry[providerName];
+      if (!entry) return providerName; // Best guess: use the name itself
+
+      // Use explicit catalog_provider if set
+      if (entry.catalog_provider) return entry.catalog_provider;
+
+      // Infer from provider_type
+      var typeMapping = {
+        'openai': 'openai',
+        'anthropic': 'anthropic',
+        'gemini': 'google',
+        'openai_responses': 'openai',
+      };
+      return typeMapping[entry.provider_type] || providerName;
+    }
+
     // ── Collection section rendering ────────────────────────────
 
     function renderCollectionSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
       var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
         catalog: renderOpts.catalog,
@@ -173,6 +270,8 @@ window.AgentConfigEditor = (function () {
     // ── Catalog section with status card ─────────────────────────
 
     function renderCatalogSection(parent, sectionSchema, configValues, renderOpts) {
+      insertGroupHeader(parent, sectionSchema);
+
       // First render the standard fields
       var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
@@ -180,7 +279,7 @@ window.AgentConfigEditor = (function () {
         onChange: function (path, newValue) {
           changes[path] = newValue;
         },
-        startExpanded: true,
+        startExpanded: false,
         idPrefix: sectionSchema.id,
       });
 
@@ -386,7 +485,6 @@ window.AgentConfigEditor = (function () {
       if (Object.keys(changes).length > 0) return true;
       if (Object.keys(collectionChanges).length > 0) return true;
       if (Object.keys(disabledSections).length > 0) {
-        // Check if any disabled sections were originally present
         for (var key in disabledSections) {
           if (originalSectionStates[key]) return true;
         }
