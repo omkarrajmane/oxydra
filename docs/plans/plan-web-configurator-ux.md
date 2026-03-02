@@ -56,6 +56,11 @@ The V1 web configurator works but provides a poor user experience:
 
 The `/api/v1/meta/schema` endpoint returns a purpose-built metadata object (NOT JSON Schema). It is organized by config type and section:
 
+- **Hybrid generation (recommended):**
+  - **Auto-derived metadata:** defaults from typed config defaults, enum options from Rust enums, tool names from the tool registry/schema declarations, and dynamic providers from effective layered config loading (including `providers.toml`).
+  - **Manually-authored metadata:** section grouping/order, labels, descriptions, input widgets, help text wording, and UX-specific visibility behavior.
+  - **Explicitly not from Figment introspection:** Figment is the correct merge/extract mechanism for effective config values, but it does not provide rich, reliable field-level UI metadata for form generation.
+
 ```json
 {
   "agent": {
@@ -98,6 +103,10 @@ The `/api/v1/meta/schema` endpoint returns a purpose-built metadata object (NOT 
 }
 ```
 
+### Nullable Field Metadata
+
+In addition to label/description/default/input type metadata, each field should carry a `nullable` flag indicating whether the field is `Option<T>` and can be unset. This is needed so the frontend knows which fields support an explicit "clear/unset" action that sends `null` in the merge patch. Secret fields already use the `__UNCHANGED__` sentinel; for other optional fields, `null` is the clear signal.
+
 ### Input Type Taxonomy
 
 | `input_type` | Widget | Description |
@@ -122,7 +131,8 @@ For `providers.registry` (map), `agents` (map), `channels.telegram.senders` (arr
 - Each entry is rendered as a collapsible card
 - "Add" button creates a new entry with defaults
 - "Remove" button deletes an entry (with confirmation)
-- The collection editor builds the correct JSON merge patch including `null` values for deletions
+- Map collections (`providers.registry`, `agents`, `credential_refs`) encode deletions via `null` merge-patch values.
+- Array collections (`channels.telegram.senders`) are saved as full-array replacements (not sparse `null` tombstones).
 
 ---
 
@@ -384,11 +394,11 @@ Each sender binding is a card with:
 **Steps:**
 
 1. **Create `runner/src/web/schema.rs`** — Schema metadata endpoint:
-   - Define `ConfigSchema`, `SchemaSection`, `SchemaField` structs with all metadata (label, description, input_type, default, constraints, enum_options, dynamic_source).
-   - Implement `build_agent_schema()`, `build_runner_schema()`, `build_user_schema()` functions that construct the full schema.
+   - Define `ConfigSchema`, `SchemaSection`, `SchemaField` structs with all metadata (label, description, input_type, default, constraints, enum_options, dynamic_source, `nullable`).
+   - Implement `build_agent_schema()`, `build_runner_schema()`, `build_user_schema()` with a **hybrid strategy**: auto-derive structural/default/enum metadata from Rust types and overlay manually-authored UX metadata.
    - Build `dynamic_sources` including:
-     - `registered_providers`: loaded from current runner config → agent config → providers.registry keys
-     - `tool_names`: hardcoded list of all known tool names from the `tools` crate constants
+     - `registered_providers`: loaded from effective layered agent config (same loader path used by runtime, including `providers.toml`)
+     - `tool_names`: derived from tool declarations (registry/schemas) so names stay in sync with actual registered tools
      - `timezone_suggestions`: curated list of common IANA timezones
      - `provider_types`: the ProviderType enum variants
      - `sandbox_tiers`: the SandboxTier enum variants
@@ -408,20 +418,7 @@ Each sender binding is a card with:
 3. **Wire new routes in `web/mod.rs`**:
    - Add the 4 new endpoints to the router.
 
-4. **Add tool names constant** — Expose a function or constant that returns all known tool names. This can be a simple function in the web schema module that returns the list:
-   ```rust
-   fn all_tool_names() -> Vec<&'static str> {
-       vec![
-           "file_read", "file_search", "file_list", "file_write", "file_edit",
-           "file_delete", "web_fetch", "web_search", "vault_copyto", "shell_exec",
-           "delegate_to_agent", "memory_search", "memory_save", "memory_update",
-           "memory_delete", "schedule_create", "schedule_search", "schedule_edit",
-           "schedule_delete", "schedule_runs", "schedule_run_output",
-           "attachment_save", "send_media",
-           "scratchpad_read", "scratchpad_write", "scratchpad_clear",
-       ]
-   }
-   ```
+4. **Add tool names source of truth** — Expose a helper in `tools`/`runner` that returns canonical tool names from actual tool declarations (not a duplicated hardcoded list in the web module). The `tools` crate already defines constants like `FILE_READ_TOOL_NAME`, `WEB_SEARCH_TOOL_NAME`, etc. — collect these into a single function so the schema endpoint and tool registration stay in sync.
 
 **Verification gate:**
 - `GET /api/v1/meta/schema` returns complete field metadata for all 3 config types.
@@ -441,7 +438,8 @@ Each sender binding is a card with:
 1. **Create `static/js/form-renderer.js`** — Reusable field rendering logic:
    - `renderField(field, schema, dynamicSources, onChange)` — Returns the appropriate input widget based on `schema.input_type`.
    - Implements all input types from the taxonomy: `text`, `number`, `boolean`, `select`, `select_dynamic`, `model_picker`, `multiline`, `multi_select`, `tag_list`, `key_value_map`, `readonly`.
-   - Each field includes: label, description (as help text below the input or tooltip), the input widget, validation error display.
+   - Add nullable/unset handling for optional fields (optional strings/numbers + tri-state optional booleans).
+   - Each field includes: label, description (as help text below the input or tooltip), the input widget, clear/unset control (when nullable), validation error display.
    - The `model_picker` widget: searchable dropdown grouped by provider, shows model name + context window + capabilities badges.
    - The `tag_list` widget: text input where pressing Enter/comma adds a tag. Tags are shown as chips with X to remove.
    - The `key_value_map` widget: repeating rows of key + value inputs with + and − buttons.
@@ -454,7 +452,8 @@ Each sender binding is a card with:
      - Edit/Delete buttons
      - Expansion reveals the entry's form fields
    - "Add New" button with a modal/inline form for the entry key
-   - Deletion sets the key to `null` in the patch (merge patch deletion)
+   - For map collections, deletion sets the key to `null` in the patch (merge patch deletion)
+   - For array collections, edits/deletions are emitted as full-array replacement payloads
    - Rename support (delete old key + create new)
 
 3. **Create `static/js/section-renderer.js`** — Section rendering:
@@ -555,9 +554,9 @@ Each sender binding is a card with:
     - "Remove Agent" button with confirmation
 
 12. **Rework save flow**:
-    - Build the JSON merge patch from changed fields across all sections
+    - Build the JSON merge patch from changed fields across all sections, including explicit `null` for user-cleared nullable values
     - Validate → preview changes → PATCH
-    - Handle collection additions/removals correctly in the patch
+    - Handle collection additions/removals correctly in the patch (map deletion via `null`, array edits via full-array replacement)
 
 **Verification gate:**
 - All Agent Config fields are rendered with proper labels, help text, and input types
@@ -623,7 +622,7 @@ Each sender binding is a card with:
 4. **Render Behavior Overrides section**:
    - `sandbox_tier` as optional dropdown (with "Use runner default" empty option)
    - `shell_enabled` as optional boolean (three-state: unset/true/false)
-   - `browser_enabled` as optional boolean
+   - `browser_enabled` as optional boolean (three-state: unset/true/false)
 
 5. **Render Channels section**:
    - Telegram as optional sub-section with "Enable" toggle
@@ -651,11 +650,14 @@ Each sender binding is a card with:
    - Verify all sections and fields are present for each config type
    - Verify dynamic sources are populated correctly
    - Verify enum options match Rust type definitions
+   - Verify recursive field-path coverage (not just top-level keys)
+   - Verify nullable metadata is present for all `Option<T>` fields
 
 2. **Catalog endpoint tests**:
    - Verify catalog returns correct data from pinned snapshot
    - Verify refresh endpoint works (may need to mock network in tests)
    - Verify status endpoint returns correct source info
+   - Verify concurrent refresh requests are serialized safely (no cache corruption)
 
 3. **Frontend cross-browser testing**:
    - Verify all input types work in Chrome, Firefox, Safari
@@ -683,9 +685,10 @@ Each sender binding is a card with:
 
 **Verification gate:**
 - All new endpoints have unit tests
-- Schema metadata covers every config field
+- Schema metadata covers every config field path recursively (including nullable semantics)
 - Mobile navigation tested at 320px, 375px, 768px viewports
 - All form input types render and save correctly
+- Map-vs-array merge patch semantics are validated in tests
 - No regressions in existing web configurator functionality
 - Documentation updated
 
@@ -728,12 +731,14 @@ crates/runner/static/
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|------------|--------|------------|
-| 1 | **Schema drift** — New config fields added in Rust but not in schema metadata | Certain (over time) | Medium | Add a compile-time test that serializes all config defaults and checks every top-level key has a schema entry. |
+| 1 | **Schema drift** — New config fields added in Rust but not in schema metadata | Certain (over time) | Medium | Add a recursive field-path coverage test (not top-level only) plus enum-option parity tests against Rust enums. |
 | 2 | **Large page load** — Schema + catalog + config = multiple API calls on page load | Low | Low | Cache schema and catalog in Alpine.js app state after first fetch. Only re-fetch config on page navigation. |
 | 3 | **Collection editor complexity** — Map add/remove with merge patch semantics is tricky | Medium | Medium | Thorough unit tests for patch generation from collection changes. Test add + edit + delete in same save operation. |
 | 4 | **Model picker performance** — Large catalog (100+ models) may be slow in dropdown | Low | Low | Group by provider, virtual scrolling if needed. In practice, 3 providers × ~30 models = ~90 entries, which is fine. |
 | 5 | **Hamburger menu z-index conflicts** — Toast notifications vs sidebar overlay | Low | Low | Ensure sidebar overlay has z-index below toasts. |
 | 6 | **Optional section toggle semantics** — Creating/removing optional config sections (tools.web_search) must map to correct merge patch | Medium | Medium | When toggle off: send `{ "tools": { "web_search": null } }`. When toggle on: send section with defaults. Test round-trip. |
+| 7 | **Nullable/unset semantic mismatch** — Optional fields cannot be reliably cleared or unset | Medium | Medium | Add explicit `nullable` schema metadata and round-trip tests for clear/unset behavior. |
+| 8 | **Dynamic provider source mismatch** — Provider dropdown misses layered providers from `providers.toml` | Medium | Medium | Build provider dynamic source from effective layered config loader and add regression tests including `providers.toml`. |
 
 ---
 
@@ -742,13 +747,17 @@ crates/runner/static/
 - [ ] `GET /api/v1/meta/schema` returns complete field metadata for agent, runner, and user configs.
 - [ ] `GET /api/v1/catalog` returns model catalog with provider/model data.
 - [ ] `POST /api/v1/catalog/refresh` fetches and caches updated catalog.
+- [ ] Concurrent catalog refresh requests are handled safely.
 - [ ] Every config field has a human-readable label and description.
 - [ ] Enum fields use dropdown selects, not text inputs.
 - [ ] Provider/model selection uses catalog-aware pickers.
+- [ ] Provider dynamic options include entries from effective layered config sources (including `providers.toml`).
 - [ ] Dynamic collections (providers, agents, credential refs, senders) support add/remove.
 - [ ] Complex objects render as structured forms, not JSON textareas.
 - [ ] Tool allowlists use multi-select from known tool names.
 - [ ] Optional config sections have enable/disable toggles.
+- [ ] Optional fields can be explicitly unset/cleared and persist correctly after reload.
+- [ ] Map collections and array collections use correct, distinct merge-patch semantics.
 - [ ] Mobile nav uses hamburger menu with slide-out sidebar.
 - [ ] All responsive breakpoints work (320px → 1200px+).
 - [ ] Config save round-trip works correctly for all config types.
