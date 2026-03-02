@@ -56,11 +56,13 @@ pub use proactive::ProactiveSender;
 pub use provider::{Provider, ProviderStream};
 pub use runner::{
     BootstrapEnvelopeError, ChannelsConfig, DEFAULT_RUNNER_CONFIG_VERSION, ExecCommand,
-    ExecCommandAck, KillSession, KillSessionAck, RunnerBehaviorOverrides, RunnerBootstrapEnvelope,
+    ExecCommandAck, KillSession, KillSessionAck, LOG_TAIL_DEFAULT, LOG_TAIL_MAX, LogFormat,
+    LogRole, LogSource, LogStream, RunnerBehaviorOverrides, RunnerBootstrapEnvelope,
     RunnerConfigError, RunnerControl, RunnerControlError, RunnerControlErrorCode,
-    RunnerControlHealthStatus, RunnerControlResponse, RunnerControlShutdownStatus,
-    RunnerGlobalConfig, RunnerGuestImages, RunnerMountPaths, RunnerResolvedMountPaths,
-    RunnerResourceLimits, RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
+    RunnerControlHealthStatus, RunnerControlLogsRequest, RunnerControlLogsResponse,
+    RunnerControlResponse, RunnerControlShutdownStatus, RunnerGlobalConfig, RunnerGuestImages,
+    RunnerLogEntry, RunnerMountPaths, RunnerResolvedMountPaths, RunnerResourceLimits,
+    RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
     SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION, SandboxTier, SenderBinding, ShellDaemonError,
     ShellDaemonRequest, ShellDaemonResponse, ShellOutputStream, SidecarEndpoint, SidecarTransport,
     SpawnSession, SpawnSessionAck, StartupDegradedReason, StartupDegradedReasonCode,

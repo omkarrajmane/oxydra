@@ -2,10 +2,12 @@ use std::collections::BTreeMap;
 
 use types::{
     BootstrapEnvelopeError, ChannelsConfig, DEFAULT_RUNNER_CONFIG_VERSION, ExecCommand,
+    LOG_TAIL_DEFAULT, LOG_TAIL_MAX, LogFormat, LogRole, LogSource, LogStream,
     RunnerBootstrapEnvelope, RunnerConfigError, RunnerControl, RunnerControlError,
-    RunnerControlErrorCode, RunnerControlHealthStatus, RunnerControlResponse,
-    RunnerControlShutdownStatus, RunnerGlobalConfig, RunnerResolvedMountPaths,
-    RunnerResourceLimits, RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
+    RunnerControlErrorCode, RunnerControlHealthStatus, RunnerControlLogsRequest,
+    RunnerControlLogsResponse, RunnerControlResponse, RunnerControlShutdownStatus,
+    RunnerGlobalConfig, RunnerLogEntry, RunnerResolvedMountPaths, RunnerResourceLimits,
+    RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
     SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION, SandboxTier, SenderBinding, ShellDaemonRequest,
     SidecarEndpoint, SidecarTransport, StartupDegradedReason, StartupDegradedReasonCode,
     StartupStatusReport, TelegramChannelConfig,
@@ -541,4 +543,122 @@ fn sender_binding_without_display_name() {
         serde_json::from_str(json).expect("binding without display_name should parse");
     assert_eq!(binding.platform_ids, vec!["12345678"]);
     assert!(binding.display_name.is_none());
+}
+
+// ── Log types tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn runner_control_logs_request_round_trips() {
+    let request = RunnerControl::Logs(RunnerControlLogsRequest {
+        role: LogRole::All,
+        stream: LogStream::Stderr,
+        tail: Some(50),
+        since: Some("2026-03-01T10:00:00Z".to_owned()),
+        format: LogFormat::Json,
+    });
+    let json = serde_json::to_string(&request).expect("logs request should serialize");
+    let decoded: RunnerControl =
+        serde_json::from_str(&json).expect("logs request should deserialize");
+    assert_eq!(decoded, request);
+}
+
+#[test]
+fn runner_control_logs_request_defaults() {
+    let json = r#"{"op":"logs","payload":{}}"#;
+    let request: RunnerControl =
+        serde_json::from_str(json).expect("logs request with defaults should parse");
+    if let RunnerControl::Logs(logs) = request {
+        assert_eq!(logs.role, LogRole::Runtime);
+        assert_eq!(logs.stream, LogStream::Both);
+        assert_eq!(logs.tail, None);
+        assert_eq!(logs.since, None);
+        assert_eq!(logs.format, LogFormat::Text);
+    } else {
+        panic!("expected Logs variant");
+    }
+}
+
+#[test]
+fn runner_control_logs_response_round_trips() {
+    let response = RunnerControlResponse::Logs(RunnerControlLogsResponse {
+        entries: vec![RunnerLogEntry {
+            timestamp: Some("2026-03-01T10:55:12Z".to_owned()),
+            source: LogSource::DockerApi,
+            role: "oxydra-vm".to_owned(),
+            stream: "stderr".to_owned(),
+            message: "gateway bind failed".to_owned(),
+        }],
+        truncated: false,
+        warnings: vec![],
+    });
+    let json = serde_json::to_string(&response).expect("logs response should serialize");
+    let decoded: RunnerControlResponse =
+        serde_json::from_str(&json).expect("logs response should deserialize");
+    assert_eq!(decoded, response);
+}
+
+#[test]
+fn log_entry_text_format() {
+    let entry = RunnerLogEntry {
+        timestamp: Some("2026-03-01T10:55:12Z".to_owned()),
+        source: LogSource::DockerApi,
+        role: "oxydra-vm".to_owned(),
+        stream: "stderr".to_owned(),
+        message: "gateway bind failed: port in use".to_owned(),
+    };
+    let text = entry.to_text_line();
+    assert!(text.contains("2026-03-01T10:55:12Z"));
+    assert!(text.contains("[docker_api]"));
+    assert!(text.contains("[oxydra-vm]"));
+    assert!(text.contains("[stderr]"));
+    assert!(text.contains("gateway bind failed: port in use"));
+}
+
+#[test]
+fn log_entry_text_format_without_timestamp() {
+    let entry = RunnerLogEntry {
+        timestamp: None,
+        source: LogSource::ProcessFile,
+        role: "shell-vm".to_owned(),
+        stream: "stdout".to_owned(),
+        message: "session started".to_owned(),
+    };
+    let text = entry.to_text_line();
+    assert!(text.starts_with("- [process_file]"));
+}
+
+#[test]
+fn logs_request_effective_tail_clamps_to_max() {
+    let request = RunnerControlLogsRequest {
+        role: LogRole::Runtime,
+        stream: LogStream::Both,
+        tail: Some(5000),
+        since: None,
+        format: LogFormat::Text,
+    };
+    assert_eq!(request.effective_tail(), LOG_TAIL_MAX);
+}
+
+#[test]
+fn logs_request_effective_tail_uses_default() {
+    let request = RunnerControlLogsRequest {
+        role: LogRole::Runtime,
+        stream: LogStream::Both,
+        tail: None,
+        since: None,
+        format: LogFormat::Text,
+    };
+    assert_eq!(request.effective_tail(), LOG_TAIL_DEFAULT);
+}
+
+#[test]
+fn logs_request_effective_tail_preserves_small_value() {
+    let request = RunnerControlLogsRequest {
+        role: LogRole::Runtime,
+        stream: LogStream::Both,
+        tail: Some(50),
+        since: None,
+        format: LogFormat::Text,
+    };
+    assert_eq!(request.effective_tail(), 50);
 }

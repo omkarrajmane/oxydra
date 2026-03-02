@@ -36,12 +36,13 @@ use tools::{ProcessHardeningOutcome, attempt_process_tier_hardening};
 use tracing::{info, warn};
 use types::{
     BootstrapEnvelopeError, GATEWAY_PROTOCOL_VERSION, GatewayClientFrame, GatewayClientHello,
-    GatewayHealthCheck, GatewayServerFrame, RunnerBootstrapEnvelope, RunnerConfigError,
-    RunnerControl, RunnerControlError, RunnerControlErrorCode, RunnerControlHealthStatus,
+    GatewayHealthCheck, GatewayServerFrame, LogRole, LogSource, LogStream, RunnerBootstrapEnvelope,
+    RunnerConfigError, RunnerControl, RunnerControlError, RunnerControlErrorCode,
+    RunnerControlHealthStatus, RunnerControlLogsRequest, RunnerControlLogsResponse,
     RunnerControlResponse, RunnerControlShutdownStatus, RunnerGlobalConfig, RunnerGuestImages,
-    RunnerMountPaths, RunnerResolvedMountPaths, RunnerResourceLimits, RunnerRuntimePolicy,
-    RunnerUserConfig, RunnerUserRegistration, SandboxTier, SidecarEndpoint, SidecarTransport,
-    StartupDegradedReason, StartupDegradedReasonCode, StartupStatusReport,
+    RunnerLogEntry, RunnerMountPaths, RunnerResolvedMountPaths, RunnerResourceLimits,
+    RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration, SandboxTier, SidecarEndpoint,
+    SidecarTransport, StartupDegradedReason, StartupDegradedReasonCode, StartupStatusReport,
 };
 
 mod backend;
@@ -935,6 +936,120 @@ impl RunnerStartup {
         Ok(())
     }
 
+    /// Collect a bounded snapshot of log entries from process-tier log files.
+    /// This is a clean public function that can be called by other modules
+    /// (e.g. a future web configurator).
+    pub fn collect_logs_snapshot(
+        &self,
+        request: &RunnerControlLogsRequest,
+    ) -> RunnerControlLogsResponse {
+        let tail = request.effective_tail();
+        let mut entries = Vec::new();
+        let mut warnings = Vec::new();
+        let mut any_file_truncated = false;
+
+        let roles: Vec<(&str, bool)> = match request.role {
+            LogRole::Runtime => vec![("oxydra-vm", true)],
+            LogRole::Sidecar => vec![("shell-vm", self.launch.sidecar.is_some())],
+            LogRole::All => vec![
+                ("oxydra-vm", true),
+                ("shell-vm", self.launch.sidecar.is_some()),
+            ],
+        };
+
+        for (role_label, available) in &roles {
+            if !available {
+                warnings.push(format!("no {role_label} guest is running; skipping"));
+                continue;
+            }
+
+            let streams: Vec<&str> = match request.stream {
+                LogStream::Stdout => vec!["stdout"],
+                LogStream::Stderr => vec!["stderr"],
+                LogStream::Both => vec!["stdout", "stderr"],
+            };
+
+            for stream_name in streams {
+                let log_file = self
+                    .workspace
+                    .logs
+                    .join(format!("{role_label}.{stream_name}.log"));
+                if !log_file.exists() {
+                    continue;
+                }
+
+                let source = self.log_source_for_role(role_label);
+
+                match read_log_file_tail(&log_file, tail, request.since.as_deref()) {
+                    Ok((lines, file_truncated)) => {
+                        if file_truncated {
+                            any_file_truncated = true;
+                        }
+                        for line in lines {
+                            entries.push(RunnerLogEntry {
+                                timestamp: extract_timestamp(&line),
+                                source,
+                                role: role_label.to_string(),
+                                stream: stream_name.to_string(),
+                                message: strip_timestamp(&line),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        warnings.push(format!("failed to read {}: {}", log_file.display(), e));
+                    }
+                }
+            }
+        }
+
+        // Global bound: clamp total entries to tail limit and mark truncated.
+        let global_truncated = entries.len() > tail;
+        if global_truncated {
+            let skip = entries.len() - tail;
+            entries.drain(..skip);
+        }
+
+        // Enforce max payload size (leave headroom under 128KB frame limit).
+        const MAX_PAYLOAD_BYTES: usize = 120 * 1024;
+        let mut total_bytes = 0;
+        let mut keep = entries.len();
+        for (i, entry) in entries.iter().enumerate() {
+            // Rough estimate: JSON overhead + message length.
+            let entry_bytes = entry.message.len() + entry.role.len() + entry.stream.len() + 128;
+            total_bytes += entry_bytes;
+            if total_bytes > MAX_PAYLOAD_BYTES {
+                keep = i;
+                break;
+            }
+        }
+        let payload_truncated = keep < entries.len();
+        if payload_truncated {
+            entries.truncate(keep);
+        }
+
+        RunnerControlLogsResponse {
+            entries,
+            truncated: any_file_truncated || global_truncated || payload_truncated,
+            warnings,
+        }
+    }
+
+    /// Determine the log source type for a given role label based on the
+    /// current guest lifecycle.
+    fn log_source_for_role(&self, role_label: &str) -> LogSource {
+        let handle = match role_label {
+            "shell-vm" => self.launch.sidecar.as_ref(),
+            _ => Some(&self.launch.runtime),
+        };
+        match handle {
+            Some(h) => match &h.lifecycle {
+                RunnerGuestLifecycle::DockerContainer(_) => LogSource::DockerApi,
+                _ => LogSource::ProcessFile,
+            },
+            None => LogSource::ProcessFile,
+        }
+    }
+
     pub fn handle_control(&mut self, request: RunnerControl) -> RunnerControlResponse {
         match request {
             RunnerControl::HealthCheck => {
@@ -969,6 +1084,16 @@ impl RunnerStartup {
                     "runner control health check handled"
                 );
                 RunnerControlResponse::HealthStatus(status)
+            }
+            RunnerControl::Logs(ref logs_request) => {
+                if self.shutdown_complete {
+                    return RunnerControlResponse::Logs(RunnerControlLogsResponse {
+                        entries: Vec::new(),
+                        truncated: false,
+                        warnings: vec!["runtime is shut down; logs may be incomplete".to_owned()],
+                    });
+                }
+                RunnerControlResponse::Logs(self.collect_logs_snapshot(logs_request))
             }
             RunnerControl::ShutdownUser { user_id } => {
                 if user_id != self.user_id {
@@ -1029,7 +1154,7 @@ impl RunnerStartup {
     /// control loop. Uses async shutdown to avoid nested tokio runtimes.
     pub async fn handle_control_async(&mut self, request: RunnerControl) -> RunnerControlResponse {
         match request {
-            RunnerControl::HealthCheck => self.handle_control(request),
+            RunnerControl::HealthCheck | RunnerControl::Logs(_) => self.handle_control(request),
             RunnerControl::ShutdownUser { user_id } => {
                 if user_id != self.user_id {
                     warn!(
@@ -2237,6 +2362,225 @@ fn pump_pipe_to_file(pipe: impl std::io::Read, path: &Path) {
         };
         let _ = writeln!(file, "{line}");
     }
+}
+
+/// Spawns a blocking tokio runtime that drains the Docker container log stream
+/// and writes stdout/stderr to log files. This function is designed to run in
+/// a dedicated `std::thread` so it can be stored in `RunnerGuestHandle.log_tasks`.
+fn spawn_docker_log_capture(
+    endpoint: &DockerEndpoint,
+    container_name: &str,
+    log_dir: &Path,
+    role: RunnerGuestRole,
+) {
+    use bollard::container::LogOutput;
+    use bollard::query_parameters::LogsOptionsBuilder;
+
+    let docker = match docker_client(endpoint) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!(error = %e, container = %container_name, "docker log capture: failed to connect");
+            return;
+        }
+    };
+
+    let stdout_path = log_dir.join(format!("{}.stdout.log", role.as_label()));
+    let stderr_path = log_dir.join(format!("{}.stderr.log", role.as_label()));
+
+    let Ok(mut stdout_file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stdout_path)
+    else {
+        warn!(path = %stdout_path.display(), "docker log capture: failed to open stdout log file");
+        return;
+    };
+    let Ok(mut stderr_file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stderr_path)
+    else {
+        warn!(path = %stderr_path.display(), "docker log capture: failed to open stderr log file");
+        return;
+    };
+
+    let options = LogsOptionsBuilder::default()
+        .follow(true)
+        .stdout(true)
+        .stderr(true)
+        .timestamps(true)
+        .build();
+
+    let container = container_name.to_owned();
+
+    let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        warn!("docker log capture: failed to build tokio runtime");
+        return;
+    };
+
+    rt.block_on(async {
+        let mut log_stream = docker.logs(&container, Some(options));
+
+        while let Some(result) = log_stream.next().await {
+            match result {
+                Ok(LogOutput::StdOut { message }) => {
+                    let text = String::from_utf8_lossy(&message);
+                    for line in text.lines() {
+                        let _ = writeln!(stdout_file, "{line}");
+                    }
+                }
+                Ok(LogOutput::StdErr { message }) => {
+                    let text = String::from_utf8_lossy(&message);
+                    for line in text.lines() {
+                        let _ = writeln!(stderr_file, "{line}");
+                    }
+                }
+                Ok(_) => { /* StdIn / Console — ignore */ }
+                Err(e) => {
+                    warn!(error = %e, container = %container, "docker log capture: stream error");
+                    break;
+                }
+            }
+        }
+    });
+}
+
+// ── Log file reading helpers ────────────────────────────────────────────────
+
+/// Read the last `max_lines` from a log file, optionally filtering lines
+/// that are newer than `since`. Returns `(lines, was_truncated)`.
+fn read_log_file_tail(
+    path: &Path,
+    max_lines: usize,
+    since: Option<&str>,
+) -> Result<(Vec<String>, bool), io::Error> {
+    use std::io::BufRead;
+
+    let file = fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+
+    let since_filter = since.and_then(parse_since_threshold);
+
+    let mut lines: Vec<String> = Vec::new();
+    for line_result in reader.lines() {
+        let line = line_result?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        // If a since filter is active, skip lines older than the threshold.
+        if let Some(ref threshold) = since_filter
+            && let Some(ts) = extract_timestamp(&line)
+            && ts.as_str() < threshold.as_str()
+        {
+            continue;
+        }
+
+        lines.push(line);
+    }
+
+    // Keep only the last `max_lines`.
+    let was_truncated = lines.len() > max_lines;
+    if was_truncated {
+        let skip = lines.len() - max_lines;
+        lines.drain(..skip);
+    }
+
+    Ok((lines, was_truncated))
+}
+
+/// Parse a `--since` value: either an RFC 3339 timestamp or a duration
+/// shorthand (e.g. "15m", "1h", "30s"). Returns an RFC 3339 threshold string
+/// suitable for lexicographic comparison against log timestamps.
+fn parse_since_threshold(since: &str) -> Option<String> {
+    let since = since.trim();
+    if since.is_empty() {
+        return None;
+    }
+
+    // Try as RFC 3339 first (contains 'T' or looks like a date).
+    if since.contains('T') && since.len() >= 19 {
+        return Some(since.to_owned());
+    }
+
+    // Try duration shorthand: digits followed by s/m/h/d.
+    if since.len() < 2 {
+        return None;
+    }
+    let (num_str, unit) = since.split_at(since.len() - 1);
+    let num: u64 = num_str.parse().ok()?;
+    let secs = match unit {
+        "s" => num,
+        "m" => num * 60,
+        "h" => num * 3600,
+        "d" => num * 86400,
+        _ => return None,
+    };
+
+    let threshold = std::time::SystemTime::now().checked_sub(Duration::from_secs(secs))?;
+    Some(system_time_to_rfc3339(threshold))
+}
+
+/// Format a `SystemTime` as an RFC 3339 string (UTC). This avoids pulling in
+/// the `chrono` crate for a single formatting call.
+fn system_time_to_rfc3339(t: std::time::SystemTime) -> String {
+    let dur = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let total_secs = dur.as_secs();
+
+    // Break down into date/time components (UTC).
+    let days = total_secs / 86400;
+    let day_secs = total_secs % 86400;
+    let hour = day_secs / 3600;
+    let minute = (day_secs % 3600) / 60;
+    let second = day_secs % 60;
+
+    // Civil date from days since 1970-01-01 (algorithm from Howard Hinnant).
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// Extract an RFC 3339-ish timestamp from the beginning of a log line.
+/// Docker `--timestamps` prepends lines like `2026-03-01T10:55:12.123456789Z `.
+fn extract_timestamp(line: &str) -> Option<String> {
+    // Look for an ISO 8601 / RFC 3339 prefix: at least "YYYY-MM-DDTHH:MM:SS".
+    if line.len() >= 19
+        && line.as_bytes()[4] == b'-'
+        && line.as_bytes()[7] == b'-'
+        && line.as_bytes()[10] == b'T'
+    {
+        // Find the end of the timestamp (space or tab delimiter).
+        let end = line.find([' ', '\t']).unwrap_or(line.len());
+        if end >= 19 {
+            return Some(line[..end].to_string());
+        }
+    }
+    None
+}
+
+/// Strip a leading timestamp (if any) from a log line, returning the message.
+fn strip_timestamp(line: &str) -> String {
+    if line.len() >= 19
+        && line.as_bytes()[4] == b'-'
+        && line.as_bytes()[7] == b'-'
+        && line.as_bytes()[10] == b'T'
+        && let Some(pos) = line.find([' ', '\t'])
+    {
+        return line[pos..].trim_start().to_string();
+    }
+    line.to_string()
 }
 
 const CONTAINER_BOOTSTRAP_MOUNT_PATH: &str = "/run/oxydra/bootstrap";

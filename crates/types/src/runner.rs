@@ -560,6 +560,135 @@ pub enum BootstrapEnvelopeError {
 pub enum RunnerControl {
     HealthCheck,
     ShutdownUser { user_id: String },
+    Logs(RunnerControlLogsRequest),
+}
+
+// ── Log retrieval types ─────────────────────────────────────────────────────
+
+/// Which guest role to retrieve logs for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LogRole {
+    #[default]
+    Runtime,
+    Sidecar,
+    All,
+}
+
+impl std::fmt::Display for LogRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Runtime => write!(f, "runtime"),
+            Self::Sidecar => write!(f, "sidecar"),
+            Self::All => write!(f, "all"),
+        }
+    }
+}
+
+/// Which output stream to retrieve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LogStream {
+    Stdout,
+    Stderr,
+    #[default]
+    Both,
+}
+
+impl std::fmt::Display for LogStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stdout => write!(f, "stdout"),
+            Self::Stderr => write!(f, "stderr"),
+            Self::Both => write!(f, "both"),
+        }
+    }
+}
+
+/// Output format for log entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LogFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+/// Where a log entry was sourced from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogSource {
+    ProcessFile,
+    DockerApi,
+}
+
+impl std::fmt::Display for LogSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ProcessFile => write!(f, "process_file"),
+            Self::DockerApi => write!(f, "docker_api"),
+        }
+    }
+}
+
+/// Maximum number of log lines that can be requested.
+pub const LOG_TAIL_MAX: usize = 1000;
+/// Default number of log lines returned.
+pub const LOG_TAIL_DEFAULT: usize = 200;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunnerControlLogsRequest {
+    #[serde(default)]
+    pub role: LogRole,
+    #[serde(default)]
+    pub stream: LogStream,
+    #[serde(default)]
+    pub tail: Option<usize>,
+    /// RFC 3339 timestamp or duration string (e.g. "15m", "1h", "30s").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    #[serde(default)]
+    pub format: LogFormat,
+}
+
+impl RunnerControlLogsRequest {
+    /// Returns the effective tail limit, clamped to `LOG_TAIL_MAX`.
+    pub fn effective_tail(&self) -> usize {
+        self.tail.unwrap_or(LOG_TAIL_DEFAULT).min(LOG_TAIL_MAX)
+    }
+}
+
+/// A single normalized log entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunnerLogEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+    pub source: LogSource,
+    pub role: String,
+    pub stream: String,
+    pub message: String,
+}
+
+impl RunnerLogEntry {
+    /// Format as a human-readable text line.
+    pub fn to_text_line(&self) -> String {
+        let ts = self.timestamp.as_deref().unwrap_or("-");
+        format!(
+            "{ts} [{source}][{role}][{stream}] {message}",
+            source = self.source,
+            role = self.role,
+            stream = self.stream,
+            message = self.message,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunnerControlLogsResponse {
+    pub entries: Vec<RunnerLogEntry>,
+    pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -609,6 +738,7 @@ pub struct RunnerControlShutdownStatus {
 pub enum RunnerControlResponse {
     HealthStatus(RunnerControlHealthStatus),
     ShutdownStatus(RunnerControlShutdownStatus),
+    Logs(RunnerControlLogsResponse),
     Error(RunnerControlError),
 }
 

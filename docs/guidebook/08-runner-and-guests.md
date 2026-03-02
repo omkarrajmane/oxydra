@@ -351,3 +351,74 @@ The gateway endpoint marker file (`tmp/gateway-endpoint`) enables discovery by e
 3. Contents: a single line with the WebSocket URL (e.g., `ws://127.0.0.1:5678/ws`)
 
 This file-based discovery avoids hardcoded ports and supports multiple concurrent guests on different ports.
+
+## Retrieving Logs
+
+The `runner logs` command retrieves runtime and sidecar logs from the runner daemon without requiring Docker-specific knowledge or direct file access.
+
+### Usage
+
+```bash
+runner --user alice logs                          # runtime stdout+stderr, last 200 lines, text
+runner --user alice logs --role sidecar           # sidecar (shell-vm) logs
+runner --user alice logs --role all               # both runtime and sidecar
+runner --user alice logs --stream stderr          # stderr only
+runner --user alice logs --tail 50                # last 50 lines
+runner --user alice logs --since 15m              # lines from the last 15 minutes
+runner --user alice logs --format json            # JSON output (one entry per line)
+runner --user alice logs --since 2026-03-01T10:00:00Z --format json --tail 100
+runner --user alice logs --follow                # continuously poll for new log lines
+runner --user alice logs -f --role all           # follow all roles (short flag)
+```
+
+### Flags
+
+| Flag         | Values                        | Default     | Description                                                        |
+|-------------|-------------------------------|-------------|--------------------------------------------------------------------|
+| `--role`    | `runtime`, `sidecar`, `all`   | `runtime`   | Which guest role to retrieve logs for                              |
+| `--stream`  | `stdout`, `stderr`, `both`    | `both`      | Which output stream to show                                        |
+| `--tail`    | 1–1000                        | `200`       | Number of log lines to retrieve (clamped to 1000)                  |
+| `--since`   | RFC 3339 or duration (e.g. `15m`, `1h`, `30s`) | — | Only show logs newer than this time |
+| `--format`  | `text`, `json`                | `text`      | Output format                                                      |
+| `--follow`, `-f` | —                        | off         | Continuously poll for new log lines (Ctrl+C to stop)               |
+
+### Output Format
+
+**Text** (default):
+```
+2026-03-01T10:55:12Z [docker_api][oxydra-vm][stderr] gateway bind failed: port in use
+```
+
+**JSON** (one object per line):
+```json
+{"timestamp":"2026-03-01T10:55:12Z","source":"docker_api","role":"oxydra-vm","stream":"stderr","message":"gateway bind failed: port in use"}
+```
+
+Each entry includes:
+- `timestamp` — RFC 3339 timestamp (if available from the log source)
+- `source` — `process_file` (process-tier file logs) or `docker_api` (Docker container logs)
+- `role` — `oxydra-vm` (runtime) or `shell-vm` (sidecar)
+- `stream` — `stdout` or `stderr`
+- `message` — the log line content
+
+### Log Sources
+
+| Sandbox Tier | Source     | Mechanism                                                           |
+|-------------|-----------|---------------------------------------------------------------------|
+| Process     | `process_file` | stdout/stderr pipes pumped to `{role}.{stream}.log` files      |
+| Container   | `docker_api`   | bollard log stream with timestamps, written to the same files  |
+| MicroVM     | `docker_api`   | macOS: same as container; Linux: process-tier log pump          |
+
+All tiers write logs to the workspace `logs/` directory. The `runner logs` command reads from these files, normalizes entries, and returns a bounded response (max 128KB frame).
+
+### Truncation
+
+When log output exceeds the requested `--tail` limit or the 128KB frame size, the response is truncated and a notice is printed to stderr: `(output truncated; use --tail to adjust)`. The `truncated` field in JSON output is set to `true`.
+
+### Follow Mode
+
+When `--follow` (or `-f`) is passed, the command prints an initial snapshot then polls the daemon every 2 seconds for new entries. Duplicate lines are suppressed using content-based deduplication. The loop exits on Ctrl+C or when the daemon is no longer reachable.
+
+### Warnings
+
+When a requested role has no running guest (e.g. `--role sidecar` with no shell-vm), a warning is printed to stderr. The command succeeds with an empty entry list rather than failing.

@@ -462,12 +462,18 @@ impl CrateSandboxBackend {
             },
         }))?;
 
-        Ok(RunnerGuestHandle::for_docker(
-            role,
-            command,
-            endpoint.clone(),
-            container_name,
-        ))
+        let mut handle =
+            RunnerGuestHandle::for_docker(role, command, endpoint.clone(), container_name.clone());
+
+        // Spawn Docker log capture thread — streams container stdout/stderr to
+        // log files, matching the process-tier log pump pattern.
+        let log_dir = request.workspace.logs.clone();
+        let log_endpoint = endpoint.clone();
+        handle.log_tasks.push(std::thread::spawn(move || {
+            spawn_docker_log_capture(&log_endpoint, &container_name, &log_dir, role);
+        }));
+
+        Ok(handle)
     }
 
     fn spawn_process_guest(

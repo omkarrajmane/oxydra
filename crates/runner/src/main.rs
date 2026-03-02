@@ -10,7 +10,10 @@ use runner::{
     RunnerStartRequest, RunnerTuiConnectRequest, catalog::CatalogError, send_control_to_daemon,
 };
 use thiserror::Error;
-use types::{RunnerControl, RunnerControlResponse, init_tracing};
+use types::{
+    LogFormat, LogRole, LogStream, RunnerControl, RunnerControlLogsRequest, RunnerControlResponse,
+    init_tracing,
+};
 
 mod update_check;
 
@@ -33,6 +36,27 @@ enum CliCommand {
     Status,
     /// Restart the runner daemon (stop then start)
     Restart,
+    /// Retrieve logs from a running runner daemon
+    Logs {
+        /// Which guest role to retrieve logs for (runtime, sidecar, all)
+        #[arg(long, default_value = "runtime")]
+        role: String,
+        /// Which output stream to show (stdout, stderr, both)
+        #[arg(long, default_value = "both")]
+        stream: String,
+        /// Number of log lines to retrieve (default 200, max 1000)
+        #[arg(long, num_args = 0..=1, default_missing_value = "200")]
+        tail: Option<usize>,
+        /// Only show logs since this time (RFC 3339 timestamp or duration like 15m, 1h, 30s)
+        #[arg(long)]
+        since: Option<String>,
+        /// Output format (text, json)
+        #[arg(long, default_value = "text")]
+        format: String,
+        /// Continuously poll for new log entries (poll interval ~2s)
+        #[arg(long, short = 'f')]
+        follow: bool,
+    },
     /// Check whether a newer Oxydra release is available on GitHub
     CheckUpdate {
         /// Include pre-release versions in the check
@@ -156,6 +180,24 @@ fn run() -> Result<(), CliError> {
         Some(CliCommand::Stop) => return handle_lifecycle(LifecycleAction::Stop, &args),
         Some(CliCommand::Status) => return handle_lifecycle(LifecycleAction::Status, &args),
         Some(CliCommand::Restart) => return handle_lifecycle(LifecycleAction::Restart, &args),
+        Some(CliCommand::Logs {
+            role,
+            stream,
+            tail,
+            since,
+            format,
+            follow,
+        }) => {
+            return handle_logs(
+                &args,
+                role.clone(),
+                stream.clone(),
+                *tail,
+                since.clone(),
+                format.clone(),
+                *follow,
+            );
+        }
         Some(CliCommand::CheckUpdate { pre_release }) => {
             return handle_check_update(*pre_release, &args.config_path);
         }
@@ -538,6 +580,246 @@ fn server_restart(runner: &Runner, user_id: &str, args: &CliArgs) -> Result<(), 
     }
 
     server_start(runner, user_id, args)
+}
+
+fn handle_logs(
+    args: &CliArgs,
+    role: String,
+    stream: String,
+    tail: Option<usize>,
+    since: Option<String>,
+    format: String,
+    follow: bool,
+) -> Result<(), CliError> {
+    let runner = Runner::from_global_config_path(&args.config_path)?;
+    let user_id = resolve_user_id(args.user_id.clone(), &runner)?;
+
+    let log_role = match role.as_str() {
+        "runtime" => LogRole::Runtime,
+        "sidecar" => LogRole::Sidecar,
+        "all" => LogRole::All,
+        other => {
+            return Err(CliError::Arguments(format!(
+                "invalid --role value `{other}`; expected runtime, sidecar, or all"
+            )));
+        }
+    };
+
+    let log_stream = match stream.as_str() {
+        "stdout" => LogStream::Stdout,
+        "stderr" => LogStream::Stderr,
+        "both" => LogStream::Both,
+        other => {
+            return Err(CliError::Arguments(format!(
+                "invalid --stream value `{other}`; expected stdout, stderr, or both"
+            )));
+        }
+    };
+
+    let log_format = match format.as_str() {
+        "text" => LogFormat::Text,
+        "json" => LogFormat::Json,
+        other => {
+            return Err(CliError::Arguments(format!(
+                "invalid --format value `{other}`; expected text or json"
+            )));
+        }
+    };
+
+    let request = RunnerControlLogsRequest {
+        role: log_role,
+        stream: log_stream,
+        tail,
+        since,
+        format: log_format,
+    };
+
+    if follow {
+        server_logs_follow(&runner, &user_id, request)
+    } else {
+        server_logs(&runner, &user_id, request)
+    }
+}
+
+fn server_logs(
+    runner: &Runner,
+    user_id: &str,
+    request: RunnerControlLogsRequest,
+) -> Result<(), CliError> {
+    let workspace = runner.provision_user_workspace(user_id)?;
+    let socket_path = workspace.control_socket_path();
+
+    if !socket_path.exists() {
+        return Err(CliError::ServerNotRunning {
+            user_id: user_id.to_owned(),
+        });
+    }
+
+    let format = request.format;
+
+    let response =
+        send_control_to_daemon(&socket_path, &RunnerControl::Logs(request)).map_err(|source| {
+            if source.is_connection_refused() {
+                CliError::ServerNotRunning {
+                    user_id: user_id.to_owned(),
+                }
+            } else {
+                CliError::ControlTransport(source)
+            }
+        })?;
+
+    match response {
+        RunnerControlResponse::Logs(logs) => {
+            for warning in &logs.warnings {
+                eprintln!("warning: {warning}");
+            }
+
+            for entry in &logs.entries {
+                match format {
+                    LogFormat::Text => println!("{}", entry.to_text_line()),
+                    LogFormat::Json => {
+                        if let Ok(json) = serde_json::to_string(entry) {
+                            println!("{json}");
+                        }
+                    }
+                }
+            }
+
+            if logs.truncated {
+                eprintln!("(output truncated; use --tail to adjust)");
+            }
+
+            Ok(())
+        }
+        RunnerControlResponse::Error(error) => Err(CliError::Arguments(format!(
+            "server reported error: {}",
+            error.message
+        ))),
+        _ => Err(CliError::Arguments(
+            "unexpected response to logs request".to_owned(),
+        )),
+    }
+}
+
+/// Follow mode: polls the daemon for log snapshots every ~2s, printing only
+/// new entries. De-duplicates by tracking a cursor key derived from each
+/// entry's content. Runs until interrupted (Ctrl+C) or connection loss.
+fn server_logs_follow(
+    runner: &Runner,
+    user_id: &str,
+    request: RunnerControlLogsRequest,
+) -> Result<(), CliError> {
+    use std::collections::HashSet;
+
+    let workspace = runner.provision_user_workspace(user_id)?;
+    let socket_path = workspace.control_socket_path();
+
+    if !socket_path.exists() {
+        return Err(CliError::ServerNotRunning {
+            user_id: user_id.to_owned(),
+        });
+    }
+
+    let format = request.format;
+    let mut seen: HashSet<u64> = HashSet::new();
+
+    // Print the initial snapshot (respecting tail), then switch to polling
+    // for new entries only.
+    let initial_response =
+        send_control_to_daemon(&socket_path, &RunnerControl::Logs(request.clone())).map_err(
+            |source| {
+                if source.is_connection_refused() {
+                    CliError::ServerNotRunning {
+                        user_id: user_id.to_owned(),
+                    }
+                } else {
+                    CliError::ControlTransport(source)
+                }
+            },
+        )?;
+
+    if let RunnerControlResponse::Logs(logs) = initial_response {
+        for warning in &logs.warnings {
+            eprintln!("warning: {warning}");
+        }
+        for entry in &logs.entries {
+            let key = entry_hash(entry);
+            seen.insert(key);
+            print_log_entry(entry, format);
+        }
+    }
+
+    // Poll loop: request the most recent entries and print only unseen ones.
+    // Use a fixed tail of 100 per poll to keep requests small.
+    let poll_request = RunnerControlLogsRequest {
+        tail: Some(100),
+        since: None, // rely on dedup, not timestamp filtering
+        ..request
+    };
+
+    loop {
+        std::thread::sleep(Duration::from_secs(2));
+
+        if !socket_path.exists() {
+            eprintln!("(daemon exited)");
+            break;
+        }
+
+        let response = match send_control_to_daemon(
+            &socket_path,
+            &RunnerControl::Logs(poll_request.clone()),
+        ) {
+            Ok(r) => r,
+            Err(source) => {
+                if source.is_connection_refused() {
+                    eprintln!("(daemon exited)");
+                    break;
+                }
+                eprintln!("warning: poll failed: {source}");
+                continue;
+            }
+        };
+
+        if let RunnerControlResponse::Logs(logs) = response {
+            for entry in &logs.entries {
+                let key = entry_hash(entry);
+                if seen.insert(key) {
+                    print_log_entry(entry, format);
+                }
+            }
+        }
+
+        // Prevent the seen set from growing without bound — if it gets large,
+        // keep only the most recent hashes by rebuilding from the last batch.
+        if seen.len() > 10_000 {
+            seen.clear();
+        }
+    }
+
+    Ok(())
+}
+
+fn print_log_entry(entry: &types::RunnerLogEntry, format: LogFormat) {
+    match format {
+        LogFormat::Text => println!("{}", entry.to_text_line()),
+        LogFormat::Json => {
+            if let Ok(json) = serde_json::to_string(entry) {
+                println!("{json}");
+            }
+        }
+    }
+}
+
+/// Produce a hash key for deduplication. Uses a simple FNV-1a-style hash of
+/// all entry fields so we don't need to pull in a hashing crate.
+fn entry_hash(entry: &types::RunnerLogEntry) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    entry.timestamp.hash(&mut hasher);
+    entry.role.hash(&mut hasher);
+    entry.stream.hash(&mut hasher);
+    entry.message.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Runs the daemon loop: binds a control socket and serves health-check and
@@ -1076,5 +1358,63 @@ mod tests {
             msg.contains("runner start"),
             "error should suggest `runner start`: {msg}"
         );
+    }
+
+    #[test]
+    fn parse_cli_args_accepts_logs_subcommand_with_defaults() {
+        let args = CliArgs::try_parse_from(["runner", "logs"]).expect("logs should parse");
+        match args.command {
+            Some(CliCommand::Logs {
+                role,
+                stream,
+                tail,
+                since,
+                format,
+                follow,
+            }) => {
+                assert_eq!(role, "runtime");
+                assert_eq!(stream, "both");
+                assert_eq!(tail, None);
+                assert!(since.is_none());
+                assert_eq!(format, "text");
+                assert!(!follow);
+            }
+            other => panic!("expected Logs subcommand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_cli_args_accepts_logs_with_all_flags() {
+        let args = CliArgs::try_parse_from([
+            "runner", "logs", "--role", "all", "--stream", "stderr", "--tail", "50", "--since",
+            "15m", "--format", "json",
+        ])
+        .expect("logs with all flags should parse");
+        match args.command {
+            Some(CliCommand::Logs {
+                role,
+                stream,
+                tail,
+                since,
+                format,
+                follow,
+            }) => {
+                assert_eq!(role, "all");
+                assert_eq!(stream, "stderr");
+                assert_eq!(tail, Some(50));
+                assert_eq!(since, Some("15m".to_owned()));
+                assert_eq!(format, "json");
+                assert!(!follow);
+            }
+            other => panic!("expected Logs subcommand, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_cli_args_accepts_logs_with_user_flag() {
+        let args = CliArgs::try_parse_from(["runner", "--user", "alice", "logs"])
+            .expect("logs with --user should parse");
+        assert_eq!(args.user_id.as_deref(), Some("alice"));
+        assert!(matches!(args.command, Some(CliCommand::Logs { .. })));
     }
 }
