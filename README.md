@@ -4,7 +4,7 @@
 
 Oxydra is a Rust-based AI agent orchestrator, that strives to run always-evolving and self learning capable agents with strong isolation, provider flexibility, tool execution, persistent memory, and multi-session/multi-agent/multi-user concurrency.
 
-> ⚠️ **Maturity notice:** Oxydra is still pre-pre-alpha and not yet ready for broad production use.
+> ⚠️ **Maturity notice:** Oxydra is in alpha stage right now.
 
 ## Table of Contents
 
@@ -273,6 +273,7 @@ Telegram supports the same session commands (`/new`, `/sessions`, `/switch`, `/c
 
 | Symptom | Fix |
 |---|---|
+| Need to check logs | `oxydra-runner help logs` will show you the options that you have for logging across runner and containers in one place |
 | `oxydra-tui was not found in PATH` | Ensure install dir is in `PATH` or run the binary directly |
 | Docker unreachable / `client error (Connect)` | Start Docker (`sudo systemctl start docker`); for Colima set `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` |
 | `Permission denied` accessing Docker socket | Add your user to the docker group: `sudo usermod -aG docker $USER` then run `newgrp docker` or log out and back in |
