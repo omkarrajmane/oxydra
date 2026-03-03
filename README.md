@@ -8,12 +8,13 @@ Oxydra is a Rust-based AI agent orchestrator, that strives to run always-evolvin
 
 ## Table of Contents
 
-- [Part 1 — Product Intro & Features](#part-1--product-intro--features)
-- [Part 2 — Quick Start (Install From Releases)](#part-2--quick-start-install-from-releases)
-- [Part 3 — Use Latest From Repository (and Contribute)](#part-3--use-latest-from-repository-and-contribute)
+- [Intro & Features](#intro--features)
+- [Quick Start](#quick-start)
+- [Manual Install & Configuration](#manual-install--configuration)
+- [Use Latest From Repository (and Contribute)](#use-latest-from-repository-and-contribute)
 - [Comparison: Oxydra vs. ZeroClaw vs. IronClaw vs. MicroClaw](#comparison-oxydra-vs-zeroclaw-vs-ironclaw-vs-microclaw)
 
-## Part 1 — Product Intro & Features
+## Intro & Features
 
 Oxydra is designed for people who want an agent runtime they can self-host, inspect, and evolve — not a black box.
 
@@ -62,9 +63,80 @@ In `process` mode, host-level isolation is weaker than container/VM isolation, b
 
 ---
 
-## Part 2 — Quick Start (Install From Releases)
+## Quick Start
 
-This is the **recommended path** if you just want Oxydra running quickly.
+The fastest path to a running Oxydra instance. You'll need [Docker](https://docs.docker.com/get-started/get-docker/) installed and running for the default `container` isolation tier. If Docker is unavailable, see [Manual Install](#manual-install--configuration) for the process-mode fallback.
+
+### 1) Choose a release tag
+
+Pick a version from the [GitHub releases page](https://github.com/shantanugoel/oxydra/releases) and export it:
+
+```bash
+export OXYDRA_TAG=v0.1.6   # replace with the release you want
+```
+
+### 2) Install with one command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/install-release.sh | bash -s -- --tag "$OXYDRA_TAG" --base-dir "$PWD"
+```
+
+This installs the `runner`, `oxydra-vm`, `shell-daemon`, and `oxydra-tui` binaries to `~/.local/bin` and copies starter config templates to `.oxydra/`. If `~/.local/bin` is not in `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### 3) Configure with the web configurator
+
+Start the web configurator:
+
+```bash
+runner --config .oxydra/runner.toml web
+```
+
+Open **http://127.0.0.1:9400** in your browser and navigate to **Agent Config**. The **Core Setup** section (highlighted in orange below) is the only part you need to configure before the agent can run — everything else on the page is optional.
+
+![Web Configurator — Agent Config Core Setup](./static/web-configurator-minimal.png)
+
+Core Setup has two areas to fill in:
+
+- **Model Selection** — pick your **Provider** and **Model** from the dropdowns
+- **Providers** — add a matching provider entry and set its `api_key_env` to the environment variable name that holds your API key (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`)
+
+Once saved, stop the web configurator with `Ctrl+C`.
+
+### 4) Export your provider API key
+
+The runner reads provider credentials from environment variables. Before starting the daemon, export the key whose name you set in the Providers section above:
+
+```bash
+export OPENAI_API_KEY=your-key-here
+# or: export ANTHROPIC_API_KEY=...
+# or: export GEMINI_API_KEY=...
+```
+
+### 5) Start the daemon and connect
+
+Run the daemon (terminal 1):
+
+```bash
+runner --config .oxydra/runner.toml --user alice start
+```
+
+Connect with the TUI (terminal 2):
+
+```bash
+runner --tui --config .oxydra/runner.toml --user alice
+```
+
+That's it — Oxydra is running. For install variants, manual TOML configuration, Docker setup on Linux, Telegram, TUI commands, process-mode fallback, and troubleshooting, see [Manual Install & Configuration](#manual-install--configuration).
+
+---
+
+## Manual Install & Configuration
+
+Use this path for more control over the install process, direct TOML editing instead of the web configurator, or to set up optional features like Telegram.
 
 ### 0) Choose a release tag
 
@@ -145,13 +217,15 @@ If `~/.local/bin` is not in `PATH`:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### 2) Review and update the copied config templates
+### 2) Review and configure
 
-If you used Option A above, the installer already created:
+If you used Option A, the installer already created:
 
 - `.oxydra/agent.toml`
 - `.oxydra/runner.toml`
 - `.oxydra/users/alice.toml`
+
+#### Configure `runner.toml`
 
 Verify `.oxydra/runner.toml` guest image tags match the release you installed:
 
@@ -168,15 +242,27 @@ If you plan to use `micro_vm` instead of `container`:
 - macOS: install and run Docker Desktop
 - Linux: install `firecracker`, set `default_tier = "micro_vm"`, and configure `guest_images.firecracker_oxydra_vm_config` (plus `guest_images.firecracker_shell_vm_config` if you want shell/browser sidecar)
 
-Update `.oxydra/agent.toml`:
-
-- choose `[selection].provider` and `[selection].model`
-- keep the matching `[providers.registry.<name>]` entry with the right `api_key_env`
-- OpenAI example: `api_key_env = "OPENAI_API_KEY"`
-- Anthropic example: `api_key_env = "ANTHROPIC_API_KEY"`
-- Gemini example: `api_key_env = "GEMINI_API_KEY"`
-
 If you want a user id other than `alice`, update `[users.alice]` in `.oxydra/runner.toml` and rename `.oxydra/users/alice.toml` accordingly.
+
+#### Configure `agent.toml`
+
+Edit `.oxydra/agent.toml`:
+
+- Set `[selection].provider` and `[selection].model`
+- Add the matching `[providers.registry.<name>]` entry with the correct `api_key_env`:
+  - OpenAI example: `api_key_env = "OPENAI_API_KEY"`
+  - Anthropic example: `api_key_env = "ANTHROPIC_API_KEY"`
+  - Gemini example: `api_key_env = "GEMINI_API_KEY"`
+
+#### Optional: use the web configurator instead
+
+If you prefer a browser UI to editing TOML directly, the web configurator provides a guided interface for the same settings:
+
+```bash
+runner --config .oxydra/runner.toml web
+```
+
+Open **http://127.0.0.1:9400** and navigate to **Agent Config**. See [Quick Start — step 3](#3-configure-with-the-web-configurator) for details on the Core Setup section. Once saved, stop the web configurator with `Ctrl+C`.
 
 ### 3) Ensure Docker is ready (Linux)
 
@@ -270,9 +356,9 @@ platform_ids = ["12345678"]
 Only IDs listed in `[[channels.telegram.senders]]` are allowed to interact with your agent.
 Telegram supports the same session commands (`/new`, `/sessions`, `/switch`, `/cancel`, `/cancelall`, `/status`).
 
-### 9) (Optional) Web Configurator
+### 9) (Optional) Web Configurator for ongoing management
 
-The web configurator provides a browser-based dashboard for managing Oxydra without editing TOML files directly.
+The web configurator provides a browser-based dashboard for managing Oxydra without editing TOML files directly — useful for day-to-day config changes after your initial setup.
 
 ```bash
 # Start the web configurator
@@ -283,7 +369,6 @@ runner --config .oxydra/runner.toml web --bind 0.0.0.0:8080
 ```
 
 Then open `http://127.0.0.1:9400` in your browser. The dashboard offers:
-- **Setup wizard** for first-time configuration
 - **Config editors** for runner, agent, and user settings (with validation and backups)
 - **Control panel** to start/stop/restart daemons
 - **Log viewer** with filtering and auto-refresh
@@ -297,7 +382,7 @@ auth_mode = "token"
 auth_token_env = "OXYDRA_WEB_TOKEN"
 ```
 
-### Quick troubleshooting
+### Troubleshooting
 
 | Symptom | Fix |
 |---|---|
@@ -314,7 +399,7 @@ auth_token_env = "OXYDRA_WEB_TOKEN"
 
 ---
 
-## Part 3 — Use Latest From Repository (and Contribute)
+## Use Latest From Repository (and Contribute)
 
 Use this path if you want unreleased changes, local development, or contributions.
 
