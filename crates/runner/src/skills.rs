@@ -1126,4 +1126,273 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
             .join(REFERENCES_SUBDIR);
         assert!(refs_dir.join("api.md").is_file());
     }
+
+    // -----------------------------------------------------------------------
+    // Actual browser skill (config/skills/BrowserAutomation/SKILL.md)
+    // -----------------------------------------------------------------------
+
+    /// Returns the path to the repo-root `config/` directory containing built-in
+    /// skills.
+    fn repo_config_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runner crate should have a parent")
+            .parent()
+            .expect("crates/ should have a parent")
+            .join("config")
+    }
+
+    /// The actual `config/skills/BrowserAutomation/SKILL.md` parses
+    /// successfully and extracts the expected metadata.
+    #[test]
+    fn actual_browser_skill_parses_with_correct_metadata() {
+        let skill_path = repo_config_dir()
+            .join(SKILLS_SUBDIR)
+            .join("BrowserAutomation")
+            .join(SKILL_FILE_NAME);
+        assert!(
+            skill_path.is_file(),
+            "expected browser skill at {}",
+            skill_path.display()
+        );
+
+        let skill = parse_skill_file(&skill_path).expect("browser SKILL.md should parse");
+        assert_eq!(skill.metadata.name, "browser-automation");
+        assert_eq!(
+            skill.metadata.description,
+            "Control a headless Chrome browser via Pinchtab's REST API"
+        );
+        assert_eq!(skill.metadata.activation, SkillActivation::Auto);
+        assert_eq!(skill.metadata.requires, vec!["shell_exec"]);
+        assert_eq!(skill.metadata.env_vars, vec!["PINCHTAB_URL"]);
+        assert_eq!(skill.metadata.priority, 50);
+    }
+
+    /// The actual browser skill body is within the 3000-token cap and
+    /// contains essential content for the LLM.
+    #[test]
+    fn actual_browser_skill_content_within_token_cap_and_has_key_sections() {
+        let skill_path = repo_config_dir()
+            .join(SKILLS_SUBDIR)
+            .join("BrowserAutomation")
+            .join(SKILL_FILE_NAME);
+        let skill = parse_skill_file(&skill_path).expect("should parse");
+
+        let estimated_tokens = skill.content.len() / CHARS_PER_TOKEN;
+        assert!(
+            estimated_tokens <= MAX_SKILL_TOKENS,
+            "browser skill body is {estimated_tokens} estimated tokens, exceeds cap {MAX_SKILL_TOKENS}"
+        );
+
+        // Essential sections that the LLM needs to see.
+        assert!(
+            skill.content.contains("## Browser Automation (Pinchtab)"),
+            "should have main heading"
+        );
+        assert!(
+            skill.content.contains("### Core Loop"),
+            "should have core loop section"
+        );
+        assert!(
+            skill.content.contains("### Key Endpoints"),
+            "should have key endpoints table"
+        );
+        assert!(
+            skill.content.contains("### Best Practices"),
+            "should have best practices section"
+        );
+        assert!(
+            skill.content.contains("### File Integration"),
+            "should have file integration section"
+        );
+        assert!(
+            skill.content.contains("### If Blocked"),
+            "should have if-blocked section"
+        );
+
+        // Key template placeholders.
+        assert!(
+            skill.content.contains("{{PINCHTAB_URL}}"),
+            "should contain PINCHTAB_URL placeholder for template substitution"
+        );
+        // Auth token referenced as shell env var (not template).
+        assert!(
+            skill.content.contains("$BRIDGE_TOKEN"),
+            "should reference BRIDGE_TOKEN as a shell env var"
+        );
+        // Reference to lazy-loaded API docs.
+        assert!(
+            skill
+                .content
+                .contains("/shared/.oxydra/skills/BrowserAutomation/references/pinchtab-api.md"),
+            "should point to the lazy-loaded API reference file"
+        );
+    }
+
+    /// The actual browser skill discovers from the repo config directory and
+    /// activates when shell is ready + `PINCHTAB_URL` is set.
+    #[test]
+    fn actual_browser_skill_discovers_and_activates() {
+        let config_dir = repo_config_dir();
+        let ws = temp_dir("actual-skill-ws");
+
+        let skills = discover_skills(&config_dir, None, ws.path());
+        assert!(
+            skills
+                .iter()
+                .any(|s| s.metadata.name == "browser-automation"),
+            "browser-automation skill should be discovered from config/skills/"
+        );
+
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let active = evaluate_activation(&skills, &ready_availability(), &env);
+        assert!(
+            active
+                .iter()
+                .any(|s| s.metadata.name == "browser-automation"),
+            "browser-automation skill should activate with shell ready + PINCHTAB_URL set"
+        );
+    }
+
+    /// The actual browser skill does NOT activate when shell is unavailable,
+    /// even though `PINCHTAB_URL` is set.
+    #[test]
+    fn actual_browser_skill_does_not_activate_without_shell() {
+        let config_dir = repo_config_dir();
+        let ws = temp_dir("actual-skill-no-shell");
+
+        let skills = discover_skills(&config_dir, None, ws.path());
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let active = evaluate_activation(&skills, &unavailable_availability(), &env);
+        assert!(
+            !active
+                .iter()
+                .any(|s| s.metadata.name == "browser-automation"),
+            "browser-automation skill should NOT activate when shell is unavailable"
+        );
+    }
+
+    /// The actual browser skill renders with `PINCHTAB_URL` substituted
+    /// and the rendered content contains all essential curl examples.
+    #[test]
+    fn actual_browser_skill_renders_with_pinchtab_url_substituted() {
+        let config_dir = repo_config_dir();
+        let ws = temp_dir("actual-skill-render");
+
+        let skills = discover_skills(&config_dir, None, ws.path());
+        let browser_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "browser-automation")
+            .expect("browser-automation skill should be discovered");
+
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let rendered = render_skill(browser_skill, &env);
+
+        // All {{PINCHTAB_URL}} placeholders should be replaced.
+        assert!(
+            !rendered.content.contains("{{PINCHTAB_URL}}"),
+            "all PINCHTAB_URL placeholders should be substituted"
+        );
+        // The rendered content should contain the actual URL.
+        assert!(
+            rendered.content.contains("http://127.0.0.1:9867"),
+            "rendered content should contain the substituted URL"
+        );
+        // Key curl examples should be present with the substituted URL.
+        assert!(
+            rendered.content.contains("http://127.0.0.1:9867/navigate"),
+            "should contain navigate endpoint with substituted URL"
+        );
+        assert!(
+            rendered
+                .content
+                .contains("http://127.0.0.1:9867/tabs/$TAB/snapshot"),
+            "should contain snapshot endpoint with substituted URL"
+        );
+        assert!(
+            rendered
+                .content
+                .contains("http://127.0.0.1:9867/tabs/$TAB/action"),
+            "should contain action endpoint with substituted URL"
+        );
+        // $BRIDGE_TOKEN should remain as a shell env var (NOT substituted).
+        assert!(
+            rendered.content.contains("$BRIDGE_TOKEN"),
+            "BRIDGE_TOKEN should remain as a shell env var reference"
+        );
+    }
+
+    /// Full pipeline: discover → evaluate → render → format produces a
+    /// prompt section containing the browser skill content.
+    #[test]
+    fn actual_browser_skill_appears_in_formatted_prompt() {
+        let config_dir = repo_config_dir();
+        let ws = temp_dir("actual-skill-prompt");
+
+        let mut env = HashMap::new();
+        env.insert(
+            "PINCHTAB_URL".to_owned(),
+            "http://127.0.0.1:9867".to_owned(),
+        );
+
+        let prompt =
+            load_and_render_skills(&config_dir, None, ws.path(), &ready_availability(), &env);
+
+        assert!(
+            prompt.contains("## Active Skills"),
+            "prompt should contain the active skills header"
+        );
+        assert!(
+            prompt.contains("## Browser Automation (Pinchtab)"),
+            "prompt should contain the browser skill heading"
+        );
+        assert!(
+            prompt.contains("http://127.0.0.1:9867/navigate"),
+            "prompt should contain rendered navigate URL"
+        );
+        assert!(
+            prompt.contains("### Core Loop"),
+            "prompt should contain the core loop section"
+        );
+        assert!(
+            prompt.contains("### Key Endpoints"),
+            "prompt should contain the key endpoints table"
+        );
+    }
+
+    /// When `PINCHTAB_URL` is not set, the formatted prompt should NOT
+    /// contain the browser skill.
+    #[test]
+    fn actual_browser_skill_absent_from_prompt_without_pinchtab_url() {
+        let config_dir = repo_config_dir();
+        let ws = temp_dir("actual-skill-no-url");
+
+        let prompt = load_and_render_skills(
+            &config_dir,
+            None,
+            ws.path(),
+            &ready_availability(),
+            &HashMap::new(),
+        );
+
+        assert!(
+            !prompt.contains("Browser Automation"),
+            "prompt should NOT contain browser skill when PINCHTAB_URL is missing"
+        );
+    }
 }

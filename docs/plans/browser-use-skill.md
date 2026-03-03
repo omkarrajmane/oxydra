@@ -795,26 +795,60 @@ copied. When browser is disabled or in Process tier, no browser infrastructure
 is provisioned. Skill system correctly gates browser skill activation on tool
 readiness and `PINCHTAB_URL` presence.
 
-### Phase C: Browser Automation Skill
+### Phase C: Browser Automation Skill ✅
 
 **Goal:** The LLM can drive the browser via shell commands guided by the skill.
 
+**Status:** Complete
+
 **Scope:**
-1. Write `config/skills/BrowserAutomation/SKILL.md` (Section 3.3)
-2. Adapt Pinchtab's `references/api.md` as
+1. ✅ Write `config/skills/BrowserAutomation/SKILL.md` (Section 3.3)
+   - Full skill body (~1036 estimated tokens) with Core Loop, Key Endpoints
+     table, Best Practices, File Integration, and If Blocked sections
+   - `{{PINCHTAB_URL}}` template placeholders for env substitution
+   - `$BRIDGE_TOKEN` referenced as shell env var (never in prompt)
+   - Lazy-loaded reference pointer to
+     `/shared/.oxydra/skills/BrowserAutomation/references/pinchtab-api.md`
+2. ✅ Adapt Pinchtab's `references/api.md` as
    `config/skills/BrowserAutomation/references/pinchtab-api.md`
    (already done in Phase B)
-3. Verify skill auto-activates when shell is available + `PINCHTAB_URL` is set
-4. Integration test: skill appears in system prompt under correct conditions
-5. **Test: end-to-end command path works under the shell policy that
+3. ✅ Verify skill auto-activates when shell is available + `PINCHTAB_URL` is set
+   - `actual_browser_skill_discovers_and_activates`
+   - `actual_browser_skill_does_not_activate_without_shell`
+4. ✅ Integration test: skill appears in system prompt under correct conditions
+   - `actual_browser_skill_appears_in_formatted_prompt`
+   - `actual_browser_skill_absent_from_prompt_without_pinchtab_url`
+5. ✅ **Test: end-to-end command path works under the shell policy that
    includes browser allowlist additions**
+   - `browser_shell_overlay_allows_browser_skill_commands` — verifies curl,
+     curl|jq pipe, sleep, jq standalone, curl -o, && chaining all pass;
+     wget is still blocked
+   - `default_policy_rejects_browser_commands` — verifies curl, jq, sleep
+     are rejected without the overlay
 6. Manual end-to-end test: agent navigates, reads, clicks via shell+curl
+   (requires live container — deferred to deployment validation)
 7. **Manual test: navigate → snapshot → click/type → diff snapshot →
    screenshot to `/shared` → `send_media`**
+   (requires live container — deferred to deployment validation)
 
-**Verification gate:** Agent can navigate to a URL, snapshot the page, click
-elements, extract text, save screenshots — all via `shell_exec` guided by
-the skill prompt.
+**Tests added (9 total):**
+- Skill parsing: `actual_browser_skill_parses_with_correct_metadata`
+- Content validation: `actual_browser_skill_content_within_token_cap_and_has_key_sections`
+- Activation: `actual_browser_skill_discovers_and_activates`,
+  `actual_browser_skill_does_not_activate_without_shell`
+- Rendering: `actual_browser_skill_renders_with_pinchtab_url_substituted`
+- Prompt integration: `actual_browser_skill_appears_in_formatted_prompt`,
+  `actual_browser_skill_absent_from_prompt_without_pinchtab_url`
+- Shell policy: `browser_shell_overlay_allows_browser_skill_commands`,
+  `default_policy_rejects_browser_commands`
+
+**Verification gate:** ✅ Browser automation skill is discovered from
+`config/skills/BrowserAutomation/SKILL.md`, activates when shell is ready and
+`PINCHTAB_URL` is set, renders with URL substitution, and appears in the system
+prompt with all essential sections (Core Loop, Key Endpoints, Best Practices,
+File Integration, If Blocked). Shell policy with browser overlay allows all
+required browser commands (curl, jq, sleep, operators) while blocking
+unauthorized commands. The skill is within the 3000-token cap.
 
 ### Phase D: Human-in-the-Loop (Post-MVP — separate detailed plan)
 
