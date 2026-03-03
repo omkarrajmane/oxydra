@@ -558,7 +558,7 @@ mod tests {
                 replace_defaults: None,
                 allow_operators: Some(false),
                 env_keys: None,
-            command_timeout_secs: None,
+                command_timeout_secs: None,
             }));
 
         let deny = policy.enforce(
