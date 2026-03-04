@@ -3,8 +3,8 @@
 Use `scripts/test-build-install.sh` to test three build sources on local Mac + SSH targets (like Raspberry Pi):
 
 - `--source tag` → installs from GitHub release artifacts (via `install-release.sh`)
-- `--source local` → builds current checkout and installs those binaries
-- `--source commit --commit <rev>` → builds a temporary worktree checkout for that commit
+- `--source local` → builds current checkout (debug profile) and installs those binaries
+- `--source commit --commit <rev>` → builds a temporary worktree checkout (debug profile) for that commit
 
 Modes:
 

@@ -21,6 +21,9 @@ Options:
   --dockerhub-namespace <name>    Back-compat alias of --image-namespace + --registry dockerhub
   -h, --help                      Show this help
 
+Environment:
+  OXYDRA_BUILD_PROFILE=release|debug  Cargo profile for binaries/images (default: release)
+
 Examples:
   ./scripts/build-release-assets.sh
   ./scripts/build-release-assets.sh --platforms linux-amd64,linux-arm64 --tag v0.2.0
@@ -36,6 +39,7 @@ BUILD_DOCKER=true
 PUSH_DOCKER=false
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr}"
 IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-}"
+BUILD_PROFILE="${OXYDRA_BUILD_PROFILE:-release}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -145,6 +149,16 @@ case "$IMAGE_REGISTRY" in
     ;;
 esac
 
+case "$BUILD_PROFILE" in
+  release|debug) ;;
+  *)
+    echo "Error: OXYDRA_BUILD_PROFILE must be release or debug (got: $BUILD_PROFILE)" >&2
+    exit 1
+    ;;
+esac
+
+PROFILE_DIR="$BUILD_PROFILE"
+
 if "$PUSH_DOCKER" && [[ -z "$IMAGE_NAMESPACE" ]]; then
   if [[ "$IMAGE_REGISTRY" == "ghcr" ]]; then
     IMAGE_NAMESPACE="${GITHUB_REPOSITORY_OWNER:-}"
@@ -181,17 +195,32 @@ fi
 
 CARGO_TARGET_DIR="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import sys,json; print(json.load(sys.stdin)["target_directory"])')"
 
+run_cargo_build_with_profile() {
+  if [[ "$BUILD_PROFILE" == "release" ]]; then
+    cargo build --release "$@"
+  else
+    cargo build "$@"
+  fi
+}
+
+run_cargo_zigbuild_with_profile() {
+  if [[ "$BUILD_PROFILE" == "release" ]]; then
+    cargo zigbuild --release "$@"
+  else
+    cargo zigbuild "$@"
+  fi
+}
+
 build_wasm_guest() {
   local wasm_target_dir="$CARGO_TARGET_DIR/wasm-guest-build"
-  echo "Building wasm guest into $wasm_target_dir ..."
-  cargo build \
+  echo "Building wasm guest ($BUILD_PROFILE) into $wasm_target_dir ..."
+  run_cargo_build_with_profile \
     --target wasm32-wasip1 \
-    --release \
     -p wasm-guest \
     --target-dir "$wasm_target_dir"
 
   mkdir -p "$REPO_ROOT/crates/tools/guest"
-  cp "$wasm_target_dir/wasm32-wasip1/release/oxydra_wasm_guest.wasm" \
+  cp "$wasm_target_dir/wasm32-wasip1/${PROFILE_DIR}/oxydra_wasm_guest.wasm" \
      "$REPO_ROOT/crates/tools/guest/oxydra_wasm_guest.wasm"
 }
 
@@ -199,10 +228,10 @@ copy_release_binaries() {
   local target="$1"
   local out_dir="$2"
   mkdir -p "$out_dir"
-  cp "$CARGO_TARGET_DIR/$target/release/runner" "$out_dir/runner"
-  cp "$CARGO_TARGET_DIR/$target/release/oxydra-vm" "$out_dir/oxydra-vm"
-  cp "$CARGO_TARGET_DIR/$target/release/shell-daemon" "$out_dir/shell-daemon"
-  cp "$CARGO_TARGET_DIR/$target/release/oxydra-tui" "$out_dir/oxydra-tui"
+  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/runner" "$out_dir/runner"
+  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/oxydra-vm" "$out_dir/oxydra-vm"
+  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/shell-daemon" "$out_dir/shell-daemon"
+  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/oxydra-tui" "$out_dir/oxydra-tui"
 }
 
 package_platform_tarball() {
@@ -218,9 +247,8 @@ if "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; then
 fi
 
 if "$BUILD_LINUX_AMD64"; then
-  echo "Building linux-amd64 release binaries ..."
-  OXYDRA_WASM_PREBUILT=1 cargo zigbuild \
-    --release \
+  echo "Building linux-amd64 binaries (${BUILD_PROFILE}) ..."
+  OXYDRA_WASM_PREBUILT=1 run_cargo_zigbuild_with_profile \
     --target x86_64-unknown-linux-musl \
     --bin runner \
     --bin oxydra-vm \
@@ -231,9 +259,8 @@ if "$BUILD_LINUX_AMD64"; then
 fi
 
 if "$BUILD_LINUX_ARM64"; then
-  echo "Building linux-arm64 release binaries ..."
-  OXYDRA_WASM_PREBUILT=1 cargo zigbuild \
-    --release \
+  echo "Building linux-arm64 binaries (${BUILD_PROFILE}) ..."
+  OXYDRA_WASM_PREBUILT=1 run_cargo_zigbuild_with_profile \
     --target aarch64-unknown-linux-musl \
     --bin runner \
     --bin oxydra-vm \
@@ -244,9 +271,8 @@ if "$BUILD_LINUX_ARM64"; then
 fi
 
 if "$BUILD_MACOS_ARM64"; then
-  echo "Building macos-arm64 release binaries ..."
-  cargo build \
-    --release \
+  echo "Building macos-arm64 binaries (${BUILD_PROFILE}) ..."
+  run_cargo_build_with_profile \
     --target aarch64-apple-darwin \
     --bin runner \
     --bin oxydra-vm \
@@ -279,8 +305,8 @@ if "$BUILD_DOCKER" && { "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; }; then
 
   if "$BUILD_LINUX_AMD64"; then
     mkdir -p "$STAGING_DIR/linux-amd64"
-    cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/oxydra-vm" "$STAGING_DIR/linux-amd64/oxydra-vm"
-    cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/shell-daemon" "$STAGING_DIR/linux-amd64/shell-daemon"
+    cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/${PROFILE_DIR}/oxydra-vm" "$STAGING_DIR/linux-amd64/oxydra-vm"
+    cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/${PROFILE_DIR}/shell-daemon" "$STAGING_DIR/linux-amd64/shell-daemon"
 
     docker build \
       --platform linux/amd64 \
@@ -304,8 +330,8 @@ if "$BUILD_DOCKER" && { "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; }; then
 
   if "$BUILD_LINUX_ARM64"; then
     mkdir -p "$STAGING_DIR/linux-arm64"
-    cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/release/oxydra-vm" "$STAGING_DIR/linux-arm64/oxydra-vm"
-    cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/release/shell-daemon" "$STAGING_DIR/linux-arm64/shell-daemon"
+    cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/${PROFILE_DIR}/oxydra-vm" "$STAGING_DIR/linux-arm64/oxydra-vm"
+    cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/${PROFILE_DIR}/shell-daemon" "$STAGING_DIR/linux-arm64/shell-daemon"
 
     docker build \
       --platform linux/arm64 \

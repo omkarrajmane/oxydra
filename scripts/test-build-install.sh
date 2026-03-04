@@ -740,8 +740,8 @@ build_local_or_commit_assets() {
     build_cmd+=(--push-docker --registry ghcr --image-namespace "$IMAGE_NAMESPACE")
   fi
 
-  log "Building source=${SOURCE} label=${BUILD_LABEL} platforms=${platform_csv}"
-  (cd "$SOURCE_CHECKOUT" && "${build_cmd[@]}")
+  log "Building source=${SOURCE} label=${BUILD_LABEL} profile=debug platforms=${platform_csv}"
+  (cd "$SOURCE_CHECKOUT" && OXYDRA_BUILD_PROFILE=debug "${build_cmd[@]}")
 
   for platform in "${required_binary_platforms[@]-}"; do
     [[ -f "${SOURCE_CHECKOUT}/dist/oxydra-${BUILD_LABEL}-${platform}.tar.gz" ]] || fail "missing built artifact for ${platform}"
