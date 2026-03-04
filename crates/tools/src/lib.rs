@@ -118,11 +118,12 @@ pub fn canonical_tool_names() -> Vec<&'static str> {
 
 const VAULT_COPYTO_READ_OPERATION: &str = "vault_copyto_read";
 const VAULT_COPYTO_WRITE_OPERATION: &str = "vault_copyto_write";
-// Retry sidecar dial for up to 15s (every 250ms) during bootstrap. This is
-// long enough to absorb normal container start jitter, while still failing
-// fast when the sidecar is genuinely unavailable.
-const SIDECAR_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-const SIDECAR_CONNECT_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+// Retry sidecar dial for up to 30s (every 500ms) during bootstrap. This is
+// long enough to absorb normal container start jitter on resource-constrained
+// devices like Raspberry Pi, while still failing fast when the sidecar is
+// genuinely unavailable.
+const SIDECAR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const SIDECAR_CONNECT_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 static NEXT_VAULT_COPYTO_OPERATION_NUMBER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
@@ -1151,12 +1152,28 @@ async fn invoke_wasm_tool(
         .map_err(|error| execution_failed(tool_name, error.to_string()))
 }
 
+/// Safety margin subtracted from the tool-level timeout to derive the
+/// shell-daemon command timeout.  This ensures the shell daemon's child
+/// process is killed and responds *before* the tool-level or turn-level
+/// timeout fires, avoiding a race where the runtime drops the RPC read
+/// mid-flight and leaves stale response bytes on the socket (protocol
+/// desync).  5 seconds is generous enough for the RPC round-trip + stream
+/// output to complete after the command finishes/times-out.
+const SHELL_COMMAND_TIMEOUT_SAFETY_MARGIN_SECS: u64 = 5;
+
 async fn execute_with_shell_session(
     session: &Arc<Mutex<Box<dyn ShellSession>>>,
     command: &str,
     timeout: Duration,
 ) -> Result<String, ToolError> {
-    let timeout_secs = timeout.as_secs();
+    // Use a command timeout that is strictly shorter than the wrapping tool
+    // timeout so the shell daemon always responds before the runtime cancels
+    // the future.  Clamp to a minimum of 5s so very short tool timeouts
+    // still leave room for the command to execute.
+    let timeout_secs = timeout
+        .as_secs()
+        .saturating_sub(SHELL_COMMAND_TIMEOUT_SAFETY_MARGIN_SECS)
+        .max(5);
     let mut session = session.lock().await;
     session
         .exec_command(command, Some(timeout_secs))

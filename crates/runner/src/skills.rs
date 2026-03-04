@@ -1550,13 +1550,13 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
         assert!(
             rendered
                 .content
-                .contains("http://127.0.0.1:9867/tabs/$TAB/snapshot"),
+                .contains("http://127.0.0.1:9867/snapshot?tabId=$TAB"),
             "should contain snapshot endpoint with substituted URL"
         );
         assert!(
             rendered
                 .content
-                .contains("http://127.0.0.1:9867/tabs/$TAB/action"),
+                .contains("http://127.0.0.1:9867/action"),
             "should contain action endpoint with substituted URL"
         );
         // $BRIDGE_TOKEN should remain as a shell env var (NOT substituted).

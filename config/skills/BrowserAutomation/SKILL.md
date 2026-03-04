@@ -17,52 +17,54 @@ Chrome starts lazily on the first request.
 
 ### Core Loop
 
-1. **Navigate** → creates a tab, returns `tabId`
+1. **Navigate** → opens URL in a new tab, returns `tabId`
 2. **Snapshot** → accessibility tree with clickable refs (e.g., `e5`)
 3. **Act** → click/type/fill/press using refs
 4. **Snapshot again** → use `diff=true` to see only changes (~90% fewer tokens)
 5. Repeat 3-4 until done
 
 ```bash
-# Navigate (creates new tab)
+# Navigate (creates new tab, returns tabId)
 TAB=$(curl -s -X POST {{PINCHTAB_URL}}/navigate \
   -H "Authorization: Bearer $BRIDGE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"url":"https://example.com"}' | jq -r '.tabId')
+  -d '{"url":"https://example.com","newTab":true}' | jq -r '.tabId')
 
 # Snapshot (interactive elements with refs)
-curl -s "{{PINCHTAB_URL}}/tabs/$TAB/snapshot?filter=interactive&maxTokens=2000" \
+curl -s "{{PINCHTAB_URL}}/snapshot?tabId=$TAB&filter=interactive&maxTokens=2000" \
   -H "Authorization: Bearer $BRIDGE_TOKEN"
 
 # Click a ref
-curl -s -X POST "{{PINCHTAB_URL}}/tabs/$TAB/action" \
+curl -s -X POST "{{PINCHTAB_URL}}/action" \
   -H "Authorization: Bearer $BRIDGE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"kind":"click","ref":"e5"}'
+  -d "{\"kind\":\"click\",\"ref\":\"e5\",\"tabId\":\"$TAB\"}"
 
 # Diff snapshot (only changes)
-curl -s "{{PINCHTAB_URL}}/tabs/$TAB/snapshot?filter=interactive&diff=true" \
+curl -s "{{PINCHTAB_URL}}/snapshot?tabId=$TAB&filter=interactive&diff=true" \
   -H "Authorization: Bearer $BRIDGE_TOKEN"
 ```
 
 ### Key Endpoints
 
+All endpoints use flat paths. Multi-tab targeting uses `?tabId=ID` query parameter or `"tabId"` in POST body.
+
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/navigate` | POST | Navigate URL → `{tabId, url, title}`. Creates new tab if no `tabId` in body |
-| `/tabs/{id}/navigate` | POST | Navigate existing tab |
-| `/tabs` | GET | List all tabs |
-| `/tab` | POST | `{"action":"new"}` or `{"action":"close","tabId":"..."}` |
-| `/tabs/{id}/snapshot` | GET | Accessibility tree. Params: `filter=interactive`, `diff=true`, `maxTokens=2000`, `format=compact` |
-| `/tabs/{id}/text` | GET | Readable text. Params: `mode=raw`, `maxChars=N` |
-| `/tabs/{id}/action` | POST | `{"kind":"click\|type\|fill\|press\|hover\|scroll\|select\|focus", "ref":"e5", ...}` |
-| `/tabs/{id}/actions` | POST | Batch: `{"actions":[...], "stopOnError":true}` |
-| `/tabs/{id}/screenshot` | GET | Binary PNG → save with `curl -o /shared/file.png` |
-| `/tabs/{id}/pdf` | GET/POST | `?output=file&path=/shared/page.pdf` |
-| `/tabs/{id}/evaluate` | POST | Run JS: `{"expression":"document.title"}` |
-| `/tabs/{id}/cookies` | GET/POST | Get/set cookies |
-| `/download` | GET | Download file: `?url=...&output=file&path=/shared/file.ext` |
-| `/upload` | POST | Upload file to input: `{"selector":"input[type=file]","paths":["/shared/file.jpg"]}` |
+| `/navigate` | POST | Navigate URL → `{tabId, url, title}`. **Must include `"newTab":true`** to get `tabId` back |
+| `/tabs` | GET | List all tabs → `{tabs: [{id, title, url, type}]}` |
+| `/tab` | POST | `{"action":"new","url":"..."}` or `{"action":"close","tabId":"..."}` |
+| `/snapshot` | GET | Accessibility tree. Params: `tabId`, `filter=interactive`, `diff=true`, `maxTokens=2000`, `format=compact` |
+| `/text` | GET | Readable text. Params: `tabId`, `mode=raw`, `maxChars=N` |
+| `/action` | POST | `{"kind":"click\|type\|fill\|press\|hover\|scroll\|select\|focus", "ref":"e5", "tabId":"..."}` |
+| `/actions` | POST | Batch: `{"actions":[...], "stopOnError":true, "tabId":"..."}` |
+| `/screenshot` | GET | Binary PNG. Params: `tabId`, `raw=true` → save with `curl -o /shared/file.png` |
+| `/pdf` | GET | `?tabId=...&output=file&path=/shared/.pinchtab/page.pdf` |
+| `/evaluate` | POST | Run JS: `{"expression":"document.title", "tabId":"..."}` |
+| `/cookies` | GET/POST | Get/set cookies. Param: `tabId` |
+| `/download` | GET | Download file: `?url=...&output=file&path=/shared/.pinchtab/file.ext` |
+| `/upload` | POST | Upload: `{"selector":"input[type=file]","paths":["/shared/file.jpg"],"tabId":"..."}` |
+| `/health` | GET | Health check → `{status, tabs}` |
 
 ### Best Practices
 
@@ -71,16 +73,17 @@ curl -s "{{PINCHTAB_URL}}/tabs/$TAB/snapshot?filter=interactive&diff=true" \
 - Use `diff=true` after actions for ~90% token savings
 - Use `/text` for reading content (~800 tokens/page)
 - Use `format=compact` for most token-efficient snapshots
-- Batch interactions with `POST /tabs/{id}/actions` for fewer round-trips
-- Save files to `/shared/` and use `send_media` to deliver to user
+- Batch interactions with `POST /actions` for fewer round-trips
+- **Always include `"newTab":true`** when navigating to get a `tabId`
+- Save Pinchtab-generated files to `/shared/.pinchtab/` (server restriction), then copy to `/shared/` if needed
 - Wait 2-3 seconds after navigation before snapshot for complex pages: `sleep 3`
 - Store `$TAB` and reuse it — tab IDs are stable
 
 ### File Integration
 
-- Save screenshots: `curl "{{PINCHTAB_URL}}/tabs/$TAB/screenshot" -H "Authorization: Bearer $BRIDGE_TOKEN" -o /shared/screenshot.png`
-- Save PDFs: `curl "{{PINCHTAB_URL}}/tabs/$TAB/pdf?output=file&path=/shared/page.pdf" -H "Authorization: Bearer $BRIDGE_TOKEN"`
-- Download files: `curl "{{PINCHTAB_URL}}/download?url=...&output=file&path=/shared/report.csv" -H "Authorization: Bearer $BRIDGE_TOKEN"`
+- Save screenshots: `curl "{{PINCHTAB_URL}}/screenshot?tabId=$TAB&raw=true" -H "Authorization: Bearer $BRIDGE_TOKEN" -o /shared/screenshot.png`
+- Save PDFs: `curl "{{PINCHTAB_URL}}/pdf?tabId=$TAB&output=file&path=/shared/.pinchtab/page.pdf" -H "Authorization: Bearer $BRIDGE_TOKEN" && cp /shared/.pinchtab/page.pdf /shared/page.pdf`
+- Download files: `curl "{{PINCHTAB_URL}}/download?url=...&output=file&path=/shared/.pinchtab/report.csv" -H "Authorization: Bearer $BRIDGE_TOKEN" && cp /shared/.pinchtab/report.csv /shared/report.csv`
 - Upload files: First write to /shared/, then `curl -X POST "{{PINCHTAB_URL}}/upload" -H "Authorization: Bearer $BRIDGE_TOKEN" -H 'Content-Type: application/json' -d '{"selector":"input[type=file]","paths":["/shared/file.jpg"]}'`
 - Send to user: After saving to /shared/, use `send_media` to deliver the file
 

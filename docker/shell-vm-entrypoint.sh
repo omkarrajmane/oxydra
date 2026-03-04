@@ -57,10 +57,10 @@ if [ "${BROWSER_ENABLED}" = "true" ]; then
     PINCHTAB_PID=$!
     echo "INFO: Pinchtab started (PID=${PINCHTAB_PID})" >&2
 
-    # ── 3. Wait for Pinchtab to become healthy (up to 60 s) ──────────────────
+    # ── 3. Wait for Pinchtab to become healthy (up to 90 s) ──────────────────
     # NOTE: Pinchtab requires Authorization even on /health (returns 401 otherwise).
     RETRIES=0
-    MAX_RETRIES=60
+    MAX_RETRIES=90
     PINCHTAB_HEALTHY=0
     while [ "${RETRIES}" -lt "${MAX_RETRIES}" ]; do
         if curl -sf --max-time 2 \
@@ -82,7 +82,7 @@ if [ "${BROWSER_ENABLED}" = "true" ]; then
         # Pinchtab starts Chrome lazily on the first real request.  We trigger
         # that initialisation now so the LLM's first browser call has no
         # multi-second Chrome startup delay.
-        curl -sf --max-time 30 \
+        curl -sf --max-time 60 \
             -X POST "${BASE_URL}/navigate" \
             -H "Authorization: Bearer ${BRIDGE_TOKEN}" \
             -H 'Content-Type: application/json' \
@@ -106,11 +106,13 @@ if [ "${BROWSER_ENABLED}" = "true" ]; then
     #     then SIGKILL to guarantee the old process is gone.
     #   • Port-free wait: we wait until the TCP port is released before starting
     #     the replacement so the new Pinchtab does not fail with "address in use".
-    #   • 60 s poll interval — avoids false-positive restarts under load.
+    #   • 15 s poll interval — short enough to recover quickly on
+    #     resource-constrained devices (e.g. Raspberry Pi) while still
+    #     avoiding false-positive restarts under normal load.
     (
         watchdog_pid="${PINCHTAB_PID}"
         while true; do
-            sleep 60
+            sleep 15
             if ! curl -sf --max-time 5 \
                     -H "Authorization: Bearer ${BRIDGE_TOKEN}" \
                     -o /dev/null "${HEALTH_URL}" 2>/dev/null; then

@@ -19,9 +19,23 @@
 #                             falls back to when no GPU is available — it is
 #                             slow and can OOM-crash on constrained devices
 #                             such as Raspberry Pi.
+#   --js-flags=--max-old-space-size=256
+#                             Caps V8 heap to 256 MB, preventing Chrome from
+#                             consuming all available RAM on memory-constrained
+#                             devices. The default (~1.5 GB) can cause OOM
+#                             kills on Raspberry Pi and similar SBCs.
+#   --disable-extensions      Disables Chrome extensions to reduce memory
+#                             usage and startup time.
+#   --disable-background-networking
+#                             Disables background network activity (update
+#                             checks, etc.) that wastes bandwidth and CPU on
+#                             constrained devices.
 exec /usr/bin/chromium \
     --no-sandbox \
     --disable-dev-shm-usage \
     --disable-gpu \
     --disable-software-rasterizer \
+    --js-flags=--max-old-space-size=256 \
+    --disable-extensions \
+    --disable-background-networking \
     "$@"
