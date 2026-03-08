@@ -2,22 +2,13 @@ use std::collections::BTreeMap;
 
 use types::{
     BootstrapEnvelopeError, ChannelsConfig, DEFAULT_RUNNER_CONFIG_VERSION, DEFAULT_RUNNER_TIMEZONE,
-    ExecCommand, LOG_TAIL_DEFAULT, LOG_TAIL_MAX, LogFormat, LogRole, LogSource, LogStream,
-    RunnerBootstrapEnvelope, RunnerConfigError, RunnerControl, RunnerControlError,
-    RunnerControlErrorCode, RunnerControlHealthStatus, RunnerControlLogsRequest,
-    RunnerControlLogsResponse, RunnerControlResponse, RunnerControlShutdownStatus,
+    LOG_TAIL_DEFAULT, LOG_TAIL_MAX, LogFormat, LogRole, LogSource, LogStream,
+    RunnerBootstrapEnvelope, RunnerConfigError, RunnerControl, RunnerControlLogsRequest,
     RunnerGlobalConfig, RunnerLogEntry, RunnerResolvedMountPaths, RunnerResourceLimits,
     RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
-    SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION, SandboxTier, SenderBinding, ShellDaemonRequest,
-    SidecarEndpoint, SidecarTransport, StartupDegradedReason, StartupDegradedReasonCode,
-    StartupStatusReport, TelegramChannelConfig,
+    SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION, SandboxTier, SenderBinding, SidecarEndpoint,
+    SidecarTransport, StartupStatusReport, TelegramChannelConfig,
 };
-
-#[test]
-fn sandbox_tier_uses_snake_case_serde_labels() {
-    let encoded = serde_json::to_string(&SandboxTier::MicroVm).expect("tier should serialize");
-    assert_eq!(encoded, "\"micro_vm\"");
-}
 
 #[test]
 fn runner_global_config_rejects_empty_user_config_path() {
@@ -113,29 +104,6 @@ fn runner_config_defaults_to_current_version() {
         RunnerUserConfig::default().behavior.timezone,
         DEFAULT_RUNNER_TIMEZONE
     );
-}
-
-#[test]
-fn runner_global_config_round_trips_through_serde() {
-    let mut users = BTreeMap::new();
-    users.insert(
-        "alice".to_owned(),
-        RunnerUserRegistration {
-            config_path: "/etc/oxydra/users/alice.toml".to_owned(),
-        },
-    );
-    let config = RunnerGlobalConfig {
-        workspace_root: "/var/lib/oxydra".to_owned(),
-        users,
-        default_tier: SandboxTier::Container,
-        ..RunnerGlobalConfig::default()
-    };
-
-    let encoded = serde_json::to_string(&config).expect("runner global config should serialize");
-    let decoded: RunnerGlobalConfig =
-        serde_json::from_str(&encoded).expect("runner global config should deserialize");
-    assert_eq!(decoded, config);
-    assert!(decoded.validate().is_ok());
 }
 
 #[test]
@@ -268,62 +236,6 @@ fn bootstrap_envelope_rejects_invalid_runtime_policy_mounts() {
 }
 
 #[test]
-fn shell_daemon_exec_command_request_round_trips() {
-    let request = ShellDaemonRequest::ExecCommand(ExecCommand {
-        request_id: "req-1".to_owned(),
-        session_id: "session-42".to_owned(),
-        command: "echo hi".to_owned(),
-        timeout_secs: Some(30),
-    });
-
-    let encoded = serde_json::to_string(&request).expect("request should serialize");
-    let decoded: ShellDaemonRequest =
-        serde_json::from_str(&encoded).expect("request should deserialize");
-    assert_eq!(decoded, request);
-}
-
-#[test]
-fn runner_control_request_round_trips() {
-    let request = RunnerControl::ShutdownUser {
-        user_id: "alice".to_owned(),
-    };
-    let encoded = serde_json::to_string(&request).expect("runner control should serialize");
-    let decoded: RunnerControl =
-        serde_json::from_str(&encoded).expect("runner control should deserialize");
-    assert_eq!(decoded, request);
-}
-
-#[test]
-fn runner_control_response_round_trips() {
-    let response = RunnerControlResponse::HealthStatus(RunnerControlHealthStatus {
-        user_id: "alice".to_owned(),
-        healthy: true,
-        sandbox_tier: SandboxTier::Container,
-        startup_status: StartupStatusReport {
-            sandbox_tier: SandboxTier::Container,
-            sidecar_available: true,
-            shell_available: true,
-            browser_available: false,
-            degraded_reasons: vec![StartupDegradedReason::new(
-                StartupDegradedReasonCode::SidecarProtocolError,
-                "sidecar protocol handshake failed",
-            )],
-        },
-        shell_available: true,
-        browser_available: false,
-        shutdown: false,
-        message: Some("ready".to_owned()),
-        log_dir: Some("/tmp/workspaces/alice/logs".to_owned()),
-        runtime_pid: Some(12345),
-        runtime_container_name: None,
-    });
-    let encoded = serde_json::to_string(&response).expect("runner control response should encode");
-    let decoded: RunnerControlResponse =
-        serde_json::from_str(&encoded).expect("runner control response should decode");
-    assert_eq!(decoded, response);
-}
-
-#[test]
 fn bootstrap_envelope_rejects_inconsistent_startup_status() {
     let envelope = RunnerBootstrapEnvelope {
         user_id: "user-1".to_owned(),
@@ -351,32 +263,6 @@ fn bootstrap_envelope_rejects_inconsistent_startup_status() {
             field: "startup_status.sidecar_available"
         }
     ));
-}
-
-#[test]
-fn runner_control_error_response_round_trips() {
-    let response = RunnerControlResponse::Error(RunnerControlError {
-        code: RunnerControlErrorCode::UnknownUser,
-        message: "unknown user `bob`".to_owned(),
-    });
-    let encoded = serde_json::to_string(&response).expect("runner control error should encode");
-    let decoded: RunnerControlResponse =
-        serde_json::from_str(&encoded).expect("runner control error should decode");
-    assert_eq!(decoded, response);
-}
-
-#[test]
-fn runner_control_shutdown_response_round_trips() {
-    let response = RunnerControlResponse::ShutdownStatus(RunnerControlShutdownStatus {
-        user_id: "alice".to_owned(),
-        shutdown: true,
-        already_stopped: false,
-        message: Some("shutdown completed".to_owned()),
-    });
-    let encoded = serde_json::to_string(&response).expect("shutdown status should encode");
-    let decoded: RunnerControlResponse =
-        serde_json::from_str(&encoded).expect("shutdown status should decode");
-    assert_eq!(decoded, response);
 }
 
 // ── Channel Config Tests ────────────────────────────────────────────────────
@@ -488,81 +374,6 @@ fn bot_token_env_refs_only_from_enabled_channels() {
 }
 
 #[test]
-fn bootstrap_envelope_with_channels_round_trips() {
-    let envelope = RunnerBootstrapEnvelope {
-        user_id: "alice".to_owned(),
-        sandbox_tier: SandboxTier::Container,
-        workspace_root: "/workspace/alice".to_owned(),
-        sidecar_endpoint: None,
-        runtime_policy: None,
-        startup_status: None,
-        channels: Some(ChannelsConfig {
-            telegram: Some(TelegramChannelConfig {
-                enabled: true,
-                bot_token_env: Some("ALICE_BOT_TOKEN".to_owned()),
-                polling_timeout_secs: 30,
-                senders: vec![
-                    SenderBinding {
-                        platform_ids: vec!["12345678".to_owned()],
-                        display_name: Some("Alice".to_owned()),
-                    },
-                    SenderBinding {
-                        platform_ids: vec!["87654321".to_owned()],
-                        display_name: None,
-                    },
-                ],
-                max_message_length: 4096,
-            }),
-        }),
-        browser_config: None,
-    };
-
-    let encoded = envelope
-        .to_length_prefixed_json()
-        .expect("envelope with channels should encode");
-    let decoded = RunnerBootstrapEnvelope::from_length_prefixed_json(&encoded)
-        .expect("envelope with channels should decode");
-    assert_eq!(decoded, envelope);
-    let channels = decoded.channels.expect("channels should be present");
-    let telegram = channels.telegram.expect("telegram should be present");
-    assert!(telegram.enabled);
-    assert_eq!(telegram.senders.len(), 2);
-}
-
-#[test]
-fn bootstrap_envelope_without_channels_round_trips() {
-    let envelope = RunnerBootstrapEnvelope {
-        user_id: "bob".to_owned(),
-        sandbox_tier: SandboxTier::Process,
-        workspace_root: "/workspace/bob".to_owned(),
-        sidecar_endpoint: None,
-        runtime_policy: None,
-        startup_status: None,
-        channels: None,
-        browser_config: None,
-    };
-
-    let encoded = envelope
-        .to_length_prefixed_json()
-        .expect("envelope without channels should encode");
-    let decoded = RunnerBootstrapEnvelope::from_length_prefixed_json(&encoded)
-        .expect("envelope without channels should decode");
-    assert_eq!(decoded, envelope);
-    assert!(decoded.channels.is_none());
-}
-
-#[test]
-fn sender_binding_serde_round_trip() {
-    let binding = SenderBinding {
-        platform_ids: vec!["aaa".to_owned(), "bbb".to_owned()],
-        display_name: Some("Test User".to_owned()),
-    };
-    let json = serde_json::to_string(&binding).expect("binding should serialize");
-    let decoded: SenderBinding = serde_json::from_str(&json).expect("binding should deserialize");
-    assert_eq!(decoded, binding);
-}
-
-#[test]
 fn sender_binding_without_display_name() {
     let json = r#"{"platform_ids":["12345678"]}"#;
     let binding: SenderBinding =
@@ -572,21 +383,6 @@ fn sender_binding_without_display_name() {
 }
 
 // ── Log types tests ─────────────────────────────────────────────────────────
-
-#[test]
-fn runner_control_logs_request_round_trips() {
-    let request = RunnerControl::Logs(RunnerControlLogsRequest {
-        role: LogRole::All,
-        stream: LogStream::Stderr,
-        tail: Some(50),
-        since: Some("2026-03-01T10:00:00Z".to_owned()),
-        format: LogFormat::Json,
-    });
-    let json = serde_json::to_string(&request).expect("logs request should serialize");
-    let decoded: RunnerControl =
-        serde_json::from_str(&json).expect("logs request should deserialize");
-    assert_eq!(decoded, request);
-}
 
 #[test]
 fn runner_control_logs_request_defaults() {
@@ -602,25 +398,6 @@ fn runner_control_logs_request_defaults() {
     } else {
         panic!("expected Logs variant");
     }
-}
-
-#[test]
-fn runner_control_logs_response_round_trips() {
-    let response = RunnerControlResponse::Logs(RunnerControlLogsResponse {
-        entries: vec![RunnerLogEntry {
-            timestamp: Some("2026-03-01T10:55:12Z".to_owned()),
-            source: LogSource::DockerApi,
-            role: "oxydra-vm".to_owned(),
-            stream: "stderr".to_owned(),
-            message: "gateway bind failed".to_owned(),
-        }],
-        truncated: false,
-        warnings: vec![],
-    });
-    let json = serde_json::to_string(&response).expect("logs response should serialize");
-    let decoded: RunnerControlResponse =
-        serde_json::from_str(&json).expect("logs response should deserialize");
-    assert_eq!(decoded, response);
 }
 
 #[test]

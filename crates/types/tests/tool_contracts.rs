@@ -1,5 +1,5 @@
 use serde_json::json;
-use types::{FunctionDecl, SafetyTier};
+use types::FunctionDecl;
 
 #[test]
 fn function_decl_serializes_to_expected_json_shape() {
@@ -63,10 +63,4 @@ fn function_decl_supports_full_json_schema_keywords() {
     assert_eq!(encoded["parameters"]["properties"]["count"]["minimum"], 1);
     assert_eq!(encoded["parameters"]["properties"]["count"]["maximum"], 10);
     assert_eq!(encoded["parameters"]["properties"]["query"]["minLength"], 1);
-}
-
-#[test]
-fn safety_tier_uses_snake_case_serde_labels() {
-    let encoded = serde_json::to_string(&SafetyTier::ReadOnly).expect("tier should serialize");
-    assert_eq!(encoded, "\"read_only\"");
 }

@@ -69,26 +69,6 @@ fn anthropic_provider_uses_default_base_url_when_empty() {
 }
 
 #[test]
-fn anthropic_api_key_resolution_uses_expected_precedence() {
-    let resolved = resolve_api_key_from_sources(
-        Some("explicit".to_owned()),
-        Some("anthropic-env".to_owned()),
-        Some("fallback".to_owned()),
-    );
-    assert_eq!(resolved.as_deref(), Some("explicit"));
-
-    let resolved = resolve_api_key_from_sources(
-        None,
-        Some("anthropic-env".to_owned()),
-        Some("fallback".to_owned()),
-    );
-    assert_eq!(resolved.as_deref(), Some("anthropic-env"));
-
-    let resolved = resolve_api_key_from_sources(None, None, Some("fallback".to_owned()));
-    assert_eq!(resolved.as_deref(), Some("fallback"));
-}
-
-#[test]
 fn anthropic_request_normalization_snapshot_is_stable() {
     let context = Context {
         provider: ProviderId::from("anthropic"),

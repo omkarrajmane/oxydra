@@ -3161,6 +3161,568 @@ fn concatenated_arguments_are_fanned_out_as_parallel_tool_calls() {
     assert_eq!(tool_calls[1].arguments["query"], "second query");
 }
 
+// ── Budget unit tests ──────────────────────────────────────────────────
+
+fn budget_runtime(limits: RuntimeLimits) -> AgentRuntime {
+    let provider_id = ProviderId::from("test");
+    let model_id = ModelId::from("test-model");
+    let catalog = test_catalog(provider_id.clone(), model_id, true);
+    let provider = FakeProvider::new(provider_id, catalog, vec![]);
+    AgentRuntime::new(Box::new(provider), ToolRegistry::default(), limits)
+}
+
+#[test]
+fn usage_to_cost_uses_total_tokens_when_present() {
+    let usage = UsageUpdate {
+        total_tokens: Some(500),
+        prompt_tokens: Some(100),
+        completion_tokens: Some(200),
+    };
+    let cost = AgentRuntime::usage_to_cost(&usage);
+    assert_eq!(cost, Some(500.0));
+}
+
+#[test]
+fn usage_to_cost_aggregates_prompt_and_completion_when_no_total() {
+    let usage = UsageUpdate {
+        total_tokens: None,
+        prompt_tokens: Some(100),
+        completion_tokens: Some(200),
+    };
+    let cost = AgentRuntime::usage_to_cost(&usage);
+    assert_eq!(cost, Some(300.0));
+}
+
+#[test]
+fn usage_to_cost_returns_none_when_all_none() {
+    let usage = UsageUpdate::default();
+    assert!(AgentRuntime::usage_to_cost(&usage).is_none());
+}
+
+#[test]
+fn usage_to_cost_returns_none_when_prompt_and_completion_both_zero() {
+    let usage = UsageUpdate {
+        total_tokens: None,
+        prompt_tokens: Some(0),
+        completion_tokens: Some(0),
+    };
+    assert!(AgentRuntime::usage_to_cost(&usage).is_none());
+}
+
+#[test]
+fn merge_usage_replaces_present_fields() {
+    let existing = UsageUpdate {
+        prompt_tokens: Some(100),
+        completion_tokens: Some(50),
+        total_tokens: Some(150),
+    };
+    let update = UsageUpdate {
+        prompt_tokens: Some(200),
+        completion_tokens: None,
+        total_tokens: Some(300),
+    };
+    let merged = AgentRuntime::merge_usage(Some(existing), update);
+    assert_eq!(merged.prompt_tokens, Some(200));
+    assert_eq!(merged.completion_tokens, Some(50));
+    assert_eq!(merged.total_tokens, Some(300));
+}
+
+#[test]
+fn merge_usage_from_none_existing() {
+    let update = UsageUpdate {
+        prompt_tokens: Some(42),
+        completion_tokens: None,
+        total_tokens: None,
+    };
+    let merged = AgentRuntime::merge_usage(None, update);
+    assert_eq!(merged.prompt_tokens, Some(42));
+    assert_eq!(merged.completion_tokens, None);
+    assert_eq!(merged.total_tokens, None);
+}
+
+#[test]
+fn compose_rolling_summary_without_previous() {
+    let msg = Message {
+        role: MessageRole::User,
+        content: Some("hello world".to_owned()),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        attachments: Vec::new(),
+    };
+    let entries: Vec<(u64, &Message, u64)> = vec![(1, &msg, 10)];
+    let summary = AgentRuntime::compose_rolling_summary(None, &entries);
+    assert!(summary.starts_with("Recent condensed turns:"));
+    assert!(summary.contains("- [1] user: hello world"));
+}
+
+#[test]
+fn compose_rolling_summary_with_previous() {
+    let previous = MemorySummaryState {
+        session_id: "s".to_owned(),
+        epoch: 1,
+        upper_sequence: 5,
+        summary: "Previous context here".to_owned(),
+        metadata: None,
+    };
+    let msg = Message {
+        role: MessageRole::Assistant,
+        content: Some("response".to_owned()),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        attachments: Vec::new(),
+    };
+    let entries: Vec<(u64, &Message, u64)> = vec![(6, &msg, 10)];
+    let summary = AgentRuntime::compose_rolling_summary(Some(&previous), &entries);
+    assert!(summary.starts_with("Previous context here"));
+    assert!(summary.contains("- [6] assistant: response"));
+}
+
+#[test]
+fn compose_rolling_summary_truncates_at_4000_chars() {
+    let long_content = "a".repeat(300);
+    let msg = Message {
+        role: MessageRole::User,
+        content: Some(long_content),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        attachments: Vec::new(),
+    };
+    // Generate enough entries to exceed 4000 chars
+    let entries: Vec<(u64, &Message, u64)> = (1..=24).map(|i| (i as u64, &msg, 10_u64)).collect();
+    let summary = AgentRuntime::compose_rolling_summary(None, &entries);
+    assert!(summary.ends_with("..."));
+    // The truncated summary (before "...") should be <= 4000 chars
+    assert!(summary.chars().count() <= 4003); // 4000 + "..."
+}
+
+#[test]
+fn summary_message_content_with_tool_calls_only() {
+    let msg = Message {
+        role: MessageRole::Assistant,
+        content: None,
+        tool_calls: vec![
+            ToolCall {
+                id: "c1".to_owned(),
+                name: "file_read".to_owned(),
+                arguments: json!({}),
+                metadata: None,
+            },
+            ToolCall {
+                id: "c2".to_owned(),
+                name: "web_search".to_owned(),
+                arguments: json!({}),
+                metadata: None,
+            },
+        ],
+        tool_call_id: None,
+        attachments: Vec::new(),
+    };
+    let content = AgentRuntime::summary_message_content(&msg);
+    assert_eq!(content, "[tool calls: file_read, web_search]");
+}
+
+#[test]
+fn summary_message_content_with_no_content_no_tool_calls() {
+    let msg = Message {
+        role: MessageRole::Assistant,
+        content: None,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        attachments: Vec::new(),
+    };
+    let content = AgentRuntime::summary_message_content(&msg);
+    assert_eq!(content, "[no text]");
+}
+
+#[test]
+fn summary_message_content_truncates_long_content() {
+    let long = "x".repeat(200);
+    let msg = Message {
+        role: MessageRole::User,
+        content: Some(long),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        attachments: Vec::new(),
+    };
+    let content = AgentRuntime::summary_message_content(&msg);
+    assert!(content.ends_with("..."));
+    assert!(content.chars().count() <= 183); // 180 + "..."
+}
+
+#[test]
+fn is_summarized_sequence_with_no_summary_state() {
+    assert!(!AgentRuntime::is_summarized_sequence(None, 0));
+    assert!(!AgentRuntime::is_summarized_sequence(None, 100));
+}
+
+#[test]
+fn is_summarized_sequence_boundary() {
+    let state = MemorySummaryState {
+        session_id: "s".to_owned(),
+        epoch: 1,
+        upper_sequence: 5,
+        summary: "summary".to_owned(),
+        metadata: None,
+    };
+    // index 0 -> sequence 1, index 4 -> sequence 5 (at boundary, should be summarized)
+    assert!(AgentRuntime::is_summarized_sequence(Some(&state), 0));
+    assert!(AgentRuntime::is_summarized_sequence(Some(&state), 4));
+    // index 5 -> sequence 6 (above boundary, should NOT be summarized)
+    assert!(!AgentRuntime::is_summarized_sequence(Some(&state), 5));
+}
+
+#[test]
+fn sequence_from_index_maps_correctly() {
+    assert_eq!(AgentRuntime::sequence_from_index(0), 1);
+    assert_eq!(AgentRuntime::sequence_from_index(9), 10);
+}
+
+#[test]
+fn validate_guard_preconditions_accepts_valid_limits() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    assert!(runtime.validate_guard_preconditions().is_ok());
+}
+
+#[test]
+fn validate_guard_preconditions_rejects_zero_timeout() {
+    let runtime = budget_runtime(RuntimeLimits {
+        turn_timeout: Duration::from_secs(0),
+        ..RuntimeLimits::default()
+    });
+    assert!(runtime.validate_guard_preconditions().is_err());
+}
+
+#[test]
+fn validate_guard_preconditions_rejects_zero_max_turns() {
+    let runtime = budget_runtime(RuntimeLimits {
+        max_turns: 0,
+        ..RuntimeLimits::default()
+    });
+    assert!(runtime.validate_guard_preconditions().is_err());
+}
+
+#[test]
+fn validate_guard_preconditions_rejects_non_positive_max_cost() {
+    let runtime = budget_runtime(RuntimeLimits {
+        max_cost: Some(0.0),
+        ..RuntimeLimits::default()
+    });
+    assert!(runtime.validate_guard_preconditions().is_err());
+
+    let runtime = budget_runtime(RuntimeLimits {
+        max_cost: Some(-1.0),
+        ..RuntimeLimits::default()
+    });
+    assert!(runtime.validate_guard_preconditions().is_err());
+
+    let runtime = budget_runtime(RuntimeLimits {
+        max_cost: Some(f64::NAN),
+        ..RuntimeLimits::default()
+    });
+    assert!(runtime.validate_guard_preconditions().is_err());
+}
+
+#[test]
+fn enforce_cost_budget_passes_when_no_limit() {
+    let runtime = budget_runtime(RuntimeLimits {
+        max_cost: None,
+        ..RuntimeLimits::default()
+    });
+    let mut accumulated = 0.0;
+    let usage = UsageUpdate {
+        total_tokens: Some(999_999),
+        ..Default::default()
+    };
+    assert!(
+        runtime
+            .enforce_cost_budget(Some(&usage), &mut accumulated)
+            .is_ok()
+    );
+    // accumulated_cost should remain 0 since max_cost is None (early return)
+    assert_eq!(accumulated, 0.0);
+}
+
+#[test]
+fn enforce_cost_budget_exceeds_limit() {
+    let runtime = budget_runtime(RuntimeLimits {
+        max_cost: Some(100.0),
+        ..RuntimeLimits::default()
+    });
+    let mut accumulated = 0.0;
+    let usage = UsageUpdate {
+        total_tokens: Some(101),
+        ..Default::default()
+    };
+    assert!(
+        runtime
+            .enforce_cost_budget(Some(&usage), &mut accumulated)
+            .is_err()
+    );
+}
+
+#[test]
+fn enforce_cost_budget_accumulates_across_calls() {
+    let runtime = budget_runtime(RuntimeLimits {
+        max_cost: Some(100.0),
+        ..RuntimeLimits::default()
+    });
+    let mut accumulated = 0.0;
+    let usage = UsageUpdate {
+        total_tokens: Some(50),
+        ..Default::default()
+    };
+    assert!(
+        runtime
+            .enforce_cost_budget(Some(&usage), &mut accumulated)
+            .is_ok()
+    );
+    assert_eq!(accumulated, 50.0);
+    assert!(
+        runtime
+            .enforce_cost_budget(Some(&usage), &mut accumulated)
+            .is_ok()
+    );
+    assert_eq!(accumulated, 100.0);
+    // Next call should exceed
+    let small = UsageUpdate {
+        total_tokens: Some(1),
+        ..Default::default()
+    };
+    assert!(
+        runtime
+            .enforce_cost_budget(Some(&small), &mut accumulated)
+            .is_err()
+    );
+}
+
+#[test]
+fn latest_retrieval_query_returns_latest_user_message() {
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![
+            Message {
+                role: MessageRole::User,
+                content: Some("first question".to_owned()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                attachments: Vec::new(),
+            },
+            Message {
+                role: MessageRole::Assistant,
+                content: Some("answer".to_owned()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                attachments: Vec::new(),
+            },
+            Message {
+                role: MessageRole::User,
+                content: Some("second question".to_owned()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                attachments: Vec::new(),
+            },
+        ],
+    };
+    let query = AgentRuntime::latest_retrieval_query(&context);
+    assert_eq!(query.as_deref(), Some("second question"));
+}
+
+#[test]
+fn latest_retrieval_query_falls_back_to_any_message() {
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![Message {
+            role: MessageRole::Assistant,
+            content: Some("only assistant message".to_owned()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        }],
+    };
+    let query = AgentRuntime::latest_retrieval_query(&context);
+    assert_eq!(query.as_deref(), Some("only assistant message"));
+}
+
+#[test]
+fn latest_retrieval_query_returns_none_for_empty_context() {
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![],
+    };
+    assert!(AgentRuntime::latest_retrieval_query(&context).is_none());
+}
+
+#[test]
+fn latest_retrieval_query_skips_empty_content() {
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![
+            Message {
+                role: MessageRole::User,
+                content: Some("  ".to_owned()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                attachments: Vec::new(),
+            },
+            Message {
+                role: MessageRole::Assistant,
+                content: Some("real content".to_owned()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                attachments: Vec::new(),
+            },
+        ],
+    };
+    let query = AgentRuntime::latest_retrieval_query(&context);
+    assert_eq!(query.as_deref(), Some("real content"));
+}
+
+#[test]
+fn select_messages_within_budget_returns_empty_when_budget_exhausted() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    let messages = vec![Message {
+        role: MessageRole::User,
+        content: Some("hello".to_owned()),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        attachments: Vec::new(),
+    }];
+    let (selected, used) = runtime
+        .select_messages_within_budget(&messages, 100, 100)
+        .expect("should not error");
+    assert!(selected.is_empty());
+    assert_eq!(used, 0);
+}
+
+#[test]
+fn select_messages_within_budget_selects_from_end() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    let messages: Vec<Message> = (0..10)
+        .map(|i| Message {
+            role: MessageRole::User,
+            content: Some(format!("message {i}")),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        })
+        .collect();
+    // Give a very large budget so all messages fit
+    let (selected, used) = runtime
+        .select_messages_within_budget(&messages, 100_000, 0)
+        .expect("should not error");
+    assert_eq!(selected.len(), 10);
+    assert!(used > 0);
+    // Messages should be in original order (reversed back)
+    assert_eq!(selected[0].content.as_deref(), Some("message 0"));
+    assert_eq!(selected[9].content.as_deref(), Some("message 9"));
+}
+
+#[test]
+fn select_messages_within_budget_drops_oldest_first() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    let messages: Vec<Message> = (0..5)
+        .map(|i| Message {
+            role: MessageRole::User,
+            content: Some(format!("message {i}")),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        })
+        .collect();
+    // Estimate tokens for a single message to set a tight budget
+    let single_tokens = runtime
+        .estimate_message_tokens(&messages[0])
+        .expect("should estimate");
+    // Budget for exactly 2 messages
+    let budget = single_tokens * 2;
+    let (selected, _) = runtime
+        .select_messages_within_budget(&messages, budget, 0)
+        .expect("should not error");
+    assert_eq!(selected.len(), 2);
+    // Should be the last 2 messages (most recent)
+    assert_eq!(selected[0].content.as_deref(), Some("message 3"));
+    assert_eq!(selected[1].content.as_deref(), Some("message 4"));
+}
+
+#[test]
+fn is_obviously_within_budget_returns_false_with_attachments() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![Message {
+            role: MessageRole::User,
+            content: Some("hello".to_owned()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: vec![InlineMedia {
+                mime_type: "image/png".to_owned(),
+                data: b"fake-image-data".to_vec(),
+            }],
+        }],
+    };
+    assert!(!runtime.is_obviously_within_budget(&context, 128_000, 1_024));
+}
+
+#[test]
+fn is_obviously_within_budget_returns_true_for_small_context() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![Message {
+            role: MessageRole::User,
+            content: Some("short message".to_owned()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        }],
+    };
+    assert!(runtime.is_obviously_within_budget(&context, 128_000, 1_024));
+}
+
+#[test]
+fn is_obviously_within_budget_returns_false_when_buffer_equals_max() {
+    let runtime = budget_runtime(RuntimeLimits::default());
+    let context = Context {
+        provider: ProviderId::from("test"),
+        model: ModelId::from("test-model"),
+        tools: vec![],
+        messages: vec![Message {
+            role: MessageRole::User,
+            content: Some("hello".to_owned()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        }],
+    };
+    // safety_buffer_tokens == max_context_tokens → available = 0
+    assert!(!runtime.is_obviously_within_budget(&context, 1_000, 1_000));
+}
+
+#[test]
+fn context_budget_breakdown_total_tokens() {
+    let breakdown = super::budget::ContextBudgetBreakdown {
+        max_context_tokens: 128_000,
+        system_tokens: 500,
+        retrieved_memory_tokens: 200,
+        history_tokens: 3_000,
+        tool_schema_tokens: 100,
+        safety_buffer_tokens: 1_024,
+    };
+    assert_eq!(breakdown.total_tokens(), 500 + 200 + 3_000 + 100 + 1_024);
+}
+
 // ── Scheduler executor tests ───────────────────────────────────────────
 
 mod scheduler_executor_tests {

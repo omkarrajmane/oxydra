@@ -278,7 +278,7 @@ impl AgentRuntime {
             .map_err(RuntimeError::from)
     }
 
-    fn compose_rolling_summary(
+    pub(crate) fn compose_rolling_summary(
         previous: Option<&MemorySummaryState>,
         summarized_entries: &[(u64, &Message, u64)],
     ) -> String {
@@ -319,7 +319,7 @@ impl AgentRuntime {
         }
     }
 
-    fn summary_message_content(message: &Message) -> String {
+    pub(crate) fn summary_message_content(message: &Message) -> String {
         let normalized = message
             .content
             .as_deref()
@@ -361,7 +361,10 @@ impl AgentRuntime {
         })
     }
 
-    fn is_summarized_sequence(summary_state: Option<&MemorySummaryState>, index: usize) -> bool {
+    pub(crate) fn is_summarized_sequence(
+        summary_state: Option<&MemorySummaryState>,
+        index: usize,
+    ) -> bool {
         let sequence = Self::sequence_from_index(index);
         summary_state
             .map(|summary_state| {
@@ -370,7 +373,7 @@ impl AgentRuntime {
             .unwrap_or(false)
     }
 
-    fn sequence_from_index(index: usize) -> u64 {
+    pub(crate) fn sequence_from_index(index: usize) -> u64 {
         u64::try_from(index).unwrap_or(u64::MAX).saturating_add(1)
     }
 
@@ -390,7 +393,7 @@ impl AgentRuntime {
         Ok(u64::from(max_context))
     }
 
-    fn is_obviously_within_budget(
+    pub(crate) fn is_obviously_within_budget(
         &self,
         context: &Context,
         max_context_tokens: u64,
@@ -484,7 +487,7 @@ impl AgentRuntime {
         }))
     }
 
-    fn latest_retrieval_query(context: &Context) -> Option<String> {
+    pub(crate) fn latest_retrieval_query(context: &Context) -> Option<String> {
         let from_latest_user = context.messages.iter().rev().find_map(|message| {
             (message.role == MessageRole::User)
                 .then_some(message.content.as_deref().unwrap_or_default().trim())
@@ -505,7 +508,7 @@ impl AgentRuntime {
         })
     }
 
-    fn select_messages_within_budget(
+    pub(crate) fn select_messages_within_budget(
         &self,
         messages: &[Message],
         budget: u64,
@@ -537,7 +540,7 @@ impl AgentRuntime {
         Self::estimate_text_tokens(serialized.as_str())
     }
 
-    fn estimate_message_tokens(&self, message: &Message) -> Result<u64, RuntimeError> {
+    pub(crate) fn estimate_message_tokens(&self, message: &Message) -> Result<u64, RuntimeError> {
         let serialized =
             serde_json::to_string(message).map_err(|_| RuntimeError::BudgetExceeded)?;
         Self::estimate_text_tokens(serialized.as_str())
