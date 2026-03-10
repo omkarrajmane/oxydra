@@ -11,11 +11,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use gray_matter::Matter;
-use gray_matter::engine::YAML;
 use rust_embed::Embed;
 use tools::ToolAvailability;
-use types::{RenderedSkill, Skill, SkillActivation, SkillMetadata};
+use types::{RenderedSkill, Skill, SkillActivation, SkillValidationError};
 
 /// Built-in skills embedded at compile time from `config/skills/`.
 /// These serve as the lowest-priority tier — filesystem skills (system, user,
@@ -23,13 +21,6 @@ use types::{RenderedSkill, Skill, SkillActivation, SkillMetadata};
 #[derive(Embed)]
 #[folder = "../../config/skills/"]
 struct BuiltinSkills;
-
-/// Maximum estimated token count for a single skill body.
-/// Estimated as `chars / 4`. Skills exceeding this are rejected.
-const MAX_SKILL_TOKENS: usize = 3000;
-
-/// Character-to-token ratio used for the token estimate.
-const CHARS_PER_TOKEN: usize = 4;
 
 /// Skill directories relative to each config tier.
 const SKILLS_SUBDIR: &str = "skills";
@@ -418,34 +409,17 @@ fn parse_skill_file(path: &Path) -> Result<Skill, SkillLoadError> {
 
 /// Parse skill content from a string (used for both file-based and embedded skills).
 fn parse_skill_content(raw: &str, source_path: &Path) -> Result<Skill, SkillLoadError> {
-    let matter = Matter::<YAML>::new();
-    let parsed = matter
-        .parse::<SkillMetadata>(raw)
-        .map_err(|err| SkillLoadError::Parse(source_path.to_path_buf(), err.to_string()))?;
-
-    let metadata: SkillMetadata = parsed.data.ok_or_else(|| {
-        SkillLoadError::Parse(
-            source_path.to_path_buf(),
-            "missing YAML frontmatter".to_owned(),
-        )
-    })?;
-
-    let content = parsed.content;
-
-    // Token cap enforcement.
-    let estimated_tokens = content.len() / CHARS_PER_TOKEN;
-    if estimated_tokens > MAX_SKILL_TOKENS {
-        return Err(SkillLoadError::TokenCap {
-            path: source_path.to_path_buf(),
-            estimated: estimated_tokens,
-            max: MAX_SKILL_TOKENS,
-        });
-    }
-
-    Ok(Skill {
-        metadata,
-        content,
-        source_path: source_path.to_path_buf(),
+    types::validate_skill_content(raw, source_path).map_err(|err| match err {
+        SkillValidationError::Parse(path, msg) => SkillLoadError::Parse(path, msg),
+        SkillValidationError::TokenCap {
+            path,
+            estimated,
+            max,
+        } => SkillLoadError::TokenCap {
+            path,
+            estimated,
+            max,
+        },
     })
 }
 
@@ -492,6 +466,7 @@ mod tests {
     use tools::sandbox::{
         SessionConnection, SessionStatus, SessionUnavailable, SessionUnavailableReason,
     };
+    use types::{CHARS_PER_TOKEN, MAX_SKILL_TOKENS, SkillMetadata};
 
     use super::*;
 

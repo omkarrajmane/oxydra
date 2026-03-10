@@ -245,6 +245,15 @@ pub async fn bootstrap_runtime_tools(
             browser_enabled,
         },
     );
+    // Register skill authoring tools. These are always available (they write
+    // to the workspace .oxydra/skills directory, which is a local filesystem
+    // operation regardless of sandbox tier).
+    if let Some(b) = bootstrap {
+        let workspace_config_dir =
+            std::path::PathBuf::from(&b.workspace_root).join(".oxydra");
+        skill_tools::register_skill_tools(&mut registry, &workspace_config_dir);
+    }
+
     registry.set_security_policy(Arc::new(workspace_security_policy(bootstrap, shell_config)));
     let availability = ToolAvailability {
         shell: shell_status,

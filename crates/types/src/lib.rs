@@ -66,15 +66,19 @@ pub use runner::{
     RunnerLogEntry, RunnerMountPaths, RunnerResolvedMountPaths, RunnerResourceLimits,
     RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
     SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION, SandboxTier, SenderBinding, ShellDaemonError,
-    ShellDaemonRequest, ShellDaemonResponse, ShellOutputStream, SidecarEndpoint, SidecarTransport,
-    SpawnSession, SpawnSessionAck, StartupDegradedReason, StartupDegradedReasonCode,
-    StartupStatusReport, StreamOutput, StreamOutputChunk, TelegramChannelConfig, WebAuthMode,
+    ShellDaemonRequest, ShellDaemonResponse, ShellOutputStream, SidecarEndpoint,
+    SidecarTransport, SpawnSession, SpawnSessionAck, StartupDegradedReason,
+    StartupDegradedReasonCode, StartupStatusReport, StreamOutput, StreamOutputChunk,
+    TelegramChannelConfig, WebAuthMode,
 };
 pub use scheduler::{
     NotificationPolicy, ScheduleCadence, ScheduleDefinition, SchedulePatch, ScheduleRunRecord,
     ScheduleRunStatus, ScheduleSearchFilters, ScheduleSearchResult, ScheduleStatus,
 };
 pub use session::{SessionRecord, SessionStore};
-pub use skill::{RenderedSkill, Skill, SkillActivation, SkillMetadata};
+pub use skill::{
+    CHARS_PER_TOKEN, MAX_SKILL_TOKENS, RenderedSkill, Skill, SkillActivation, SkillMetadata,
+    SkillValidationError, validate_skill_content,
+};
 pub use tool::{FunctionDecl, SafetyTier, Tool, ToolExecutionContext, ToolParameterSchema};
 pub use tracing::init_tracing;
