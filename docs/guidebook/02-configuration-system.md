@@ -54,7 +54,7 @@ pub struct AgentConfig {
     pub reliability: ReliabilityConfig,
     pub catalog: CatalogConfig,        // Catalog resolution and validation
     pub tools: ToolsConfig,
-    pub scheduler: SchedulerConfig,    // Scheduled task system (disabled by default)
+    pub scheduler: SchedulerConfig,    // Scheduled task system (enabled by default)
     pub agents: BTreeMap<String, AgentDefinition>, // Optional named specialist agents
 }
 ```
@@ -280,7 +280,7 @@ Controls the scheduled task system:
 
 ```rust
 pub struct SchedulerConfig {
-    pub enabled: bool,                      // Default: false
+    pub enabled: bool,                      // Default: true
     pub poll_interval_secs: u64,            // Default: 15
     pub max_concurrent: usize,              // Default: 2
     pub max_schedules_per_user: usize,      // Default: 50
@@ -296,7 +296,7 @@ pub struct SchedulerConfig {
 
 | Field | Default | Purpose |
 |-------|---------|---------|
-| `enabled` | `false` | Whether scheduling is active |
+| `enabled` | `true` | Whether scheduling is active |
 | `poll_interval_secs` | `15` | How often the executor checks for due schedules |
 | `max_concurrent` | `2` | Maximum concurrent scheduled runs |
 | `max_schedules_per_user` | `50` | Per-user schedule limit |
@@ -309,7 +309,7 @@ pub struct SchedulerConfig {
 | `notify_after_failures` | `None` | Notify user after N consecutive failures (regardless of notification policy) |
 
 **Key design decisions:**
-- Scheduling is disabled by default and must be explicitly enabled.
+- Scheduling is enabled by default.
 - `max_turns` and `max_cost` are operator-only configuration — they are not exposed in any tool schema. The LLM cannot override execution budgets for scheduled runs.
 - The scheduler requires the memory backend to be enabled, as schedule definitions and run history are stored in the same libSQL database.
 - Telegram channel adapters also require the memory backend, because channel session mappings and session persistence use the same session store.

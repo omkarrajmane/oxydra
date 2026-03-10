@@ -1220,7 +1220,7 @@ fn agent_scheduler_section() -> SchemaSection {
         fields: vec![
             SchemaField {
                 description: Some("Enable scheduled/recurring task execution".into()),
-                default: Some(Value::Bool(false)),
+                default: Some(Value::Bool(true)),
                 ..fld("scheduler.enabled", "Enable Scheduler", "boolean")
             },
             SchemaField {
@@ -2671,6 +2671,10 @@ mod tests {
             .expect("scheduler.default_timezone field should exist");
         assert_eq!(scheduler_timezone["input_type"], "select_dynamic");
         assert_eq!(scheduler_timezone["allow_custom"], true);
+
+        let scheduler_enabled = find_field(agent_sections, "scheduler.enabled")
+            .expect("scheduler.enabled field should exist");
+        assert_eq!(scheduler_enabled["default"], true);
 
         let user_sections = json["data"]["user"]["sections"].as_array().unwrap();
         let container_timezone = find_field(user_sections, "behavior.timezone")

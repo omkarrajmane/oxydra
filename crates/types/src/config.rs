@@ -882,10 +882,10 @@ pub struct WebSearchConfig {
 /// Scheduler system configuration.
 ///
 /// Controls whether scheduled tasks are enabled, execution budgets,
-/// and anti-abuse limits. Scheduling is disabled by default.
+/// and anti-abuse limits. Scheduling is enabled by default.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SchedulerConfig {
-    /// Whether scheduling is enabled. Default: false.
+    /// Whether scheduling is enabled. Default: true.
     #[serde(default)]
     pub enabled: bool,
     /// Polling interval in seconds for the executor. Default: 15.
@@ -924,7 +924,7 @@ pub struct SchedulerConfig {
 impl Default for SchedulerConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             poll_interval_secs: default_scheduler_poll_interval_secs(),
             max_concurrent: default_scheduler_max_concurrent(),
             max_schedules_per_user: default_scheduler_max_schedules_per_user(),

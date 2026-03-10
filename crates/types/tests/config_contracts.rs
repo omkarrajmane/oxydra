@@ -10,6 +10,7 @@ fn default_agent_config_is_valid() {
     assert_eq!(config.selection.model, ModelId::from("gpt-4o-mini"));
     assert_eq!(config.memory, MemoryConfig::default());
     assert!(config.memory.enabled);
+    assert!(config.scheduler.enabled);
     assert_eq!(
         config.memory.embedding_backend,
         MemoryEmbeddingBackend::Model2vec

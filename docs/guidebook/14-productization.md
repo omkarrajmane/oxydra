@@ -121,7 +121,7 @@ Cadence evaluation uses the `cron` crate for cron expressions and `chrono-tz` fo
 
 ### Configuration
 
-The scheduler is disabled by default. To enable it, add `[scheduler] enabled = true` to the agent config. See Chapter 2 for all configuration options including `max_turns`, `max_cost` (operator-only budgets), `min_interval_secs`, `auto_disable_after_failures`, and `default_timezone`.
+The scheduler is enabled by default. Use `[scheduler] enabled = false` to turn it off. See Chapter 2 for all configuration options including `max_turns`, `max_cost` (operator-only budgets), `min_interval_secs`, `auto_disable_after_failures`, and `default_timezone`.
 
 ### Session Isolation
 

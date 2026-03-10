@@ -192,7 +192,7 @@ jitter          = false # Add randomized jitter to backoff
 # --- Scheduler ---
 # Enable and configure the scheduler for automated recurring/one-off tasks.
 # [scheduler]
-# enabled = true                      # Enable scheduling (default: false)
+# enabled = true                      # Enable scheduling (default: true)
 # poll_interval_secs = 15             # How often to check for due tasks
 # max_concurrent = 2                  # Max concurrent scheduled runs
 # max_schedules_per_user = 50         # Per-user schedule limit
