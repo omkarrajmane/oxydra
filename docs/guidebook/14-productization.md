@@ -328,7 +328,7 @@ skill not activated: required env var(s) not set  skill=browser-automation missi
 
 ### Overriding and Disabling Built-ins
 
-Users place a skill with the same `name` value at a higher-precedence location to override a built-in. To disable a built-in, set `activation: manual` in the override — `manual` skills are never auto-injected. See the [README Customizing section](../../README.md#skills-custom-workflows-and-overrides) for path details.
+Users place a skill with the same `name` value at a higher-precedence location to override a built-in. To disable a built-in, set `activation: manual` in the override — `manual` skills are never auto-injected. See the [CUSTOMIZATION doc](../../docs/CUSTOMIZATION.md#skills-custom-workflows-and-overrides) for path details.
 
 ### Implementation Sequence (Phases A–C)
 

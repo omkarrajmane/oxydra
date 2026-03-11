@@ -83,17 +83,19 @@ Add the following step before any `cargo build` or `cargo test` step:
 
 ## Cross-Document Consistency
 
-The README (`README.md`) and this guidebook serve different audiences:
+The README (`README.md`), the user-facing docs in `docs/`, and this guidebook serve different audiences:
 
 | Topic | Canonical Source | Other docs should... |
 |-------|-----------------|---------------------|
-| End-user commands, setup paths | `README.md` | Link to README, not duplicate |
-| Runtime behavior defaults (queueing, limits, timeouts) | Guidebook chapter(s) | README references defaults but guidebook is authoritative |
-| Feature maturity (implemented/experimental/planned) | Guidebook chapter status headers + Chapter 15 | README uses consistent wording |
-| Provider/model support | Chapter 3 (Provider Layer) | README lists providers; chapter has implementation details |
-| Configuration options | Chapter 2 (Configuration System) | README shows minimal examples; chapter is exhaustive |
+| End-user commands and setup paths | `docs/MANUAL_INSTALL.md` | README can link to it; guidebook should not duplicate it |
+| Runtime customization and operational tuning | `docs/CUSTOMIZATION.md` | README can link to it; guidebook remains implementation-focused |
+| Build-from-source and contributor workflow | `docs/DEVELOPMENT.md` | README can link to it; guidebook covers implementation, not contribution flow |
+| Runtime behavior defaults (queueing, limits, timeouts) | Guidebook chapter(s) | README and user docs can reference defaults, but the guidebook is authoritative |
+| Feature maturity (implemented/experimental/planned) | Guidebook chapter status headers + Chapter 15 | README and user docs use consistent wording |
+| Provider/model support | Chapter 3 (Provider Layer) | User docs can list providers; the chapter has implementation details |
+| Configuration options | Chapter 2 (Configuration System) | User docs show examples; the chapter is exhaustive |
 
-**When making changes:** If a behavior default changes, update both the relevant guidebook chapter and the README. If a feature status changes, update the chapter status header and Chapter 15.
+**When making changes:** If a behavior default changes, update the relevant guidebook chapter and any user-facing doc that references it. If a feature status changes, update the chapter status header and Chapter 15.
 
 ## Canonical Source
 
