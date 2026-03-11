@@ -1052,8 +1052,46 @@ shell_jail = "nono"  # nono (default) | bwrap | none
   - read-only: `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`
   - optionally: `vault/` read-only (or deny entirely if vault access should go through the WASM tool)
 - Apply sandbox in `pre_exec` hook of `run_shell_command()`
-- Block network if shell policy does not require it (browser session needs network for Pinchtab)
 - Graceful fallback: if nono fails to apply (unsupported platform/kernel), log a warning and proceed without sandbox
+
+**Different capability sets for shell vs browser sessions**:
+
+The main shell session and the browser's shell session are separate `LocalProcessShellSession` instances and need different nono sandboxes:
+
+| Capability | Main shell session | Browser shell session |
+| --- | --- | --- |
+| Filesystem read-write | workspace `shared/`, `tmp/` | workspace `shared/`, `tmp/` (screenshots, state) |
+| Filesystem read-only | `/usr`, `/lib`, `/bin`, `/etc` | `/usr`, `/lib`, `/bin`, `/etc` (curl, jq, sleep) |
+| Network | **blocked** (or per shell policy) | **allowed** — must reach Pinchtab on localhost |
+| Env | clean + `ShellConfig.env_keys` | clean + `BRIDGE_TOKEN` + browser env vars |
+
+The browser tool executes curl/jq scripts against Pinchtab's HTTP API on localhost (e.g., `curl -sf http://127.0.0.1:9867/navigate ...`). If network is blocked, the browser tool cannot function. The browser session's nono `CapabilitySet` must **not** call `block_network()`, or must specifically allow localhost / the Pinchtab port if nono supports port-level granularity (Landlock ABI v4+ supports `NetPort` rules for specific ports).
+
+Build the capability set via a shared helper parameterized on whether network is needed:
+
+```rust
+fn build_shell_sandbox_caps(
+    mounts: &EffectiveMountPaths,
+    allow_network: bool,
+) -> nono::CapabilitySet {
+    let mut caps = nono::CapabilitySet::new();
+    caps.allow_read_write(&mounts.shared).ok();
+    caps.allow_read_write(&mounts.tmp).ok();
+    for path in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"] {
+        caps.allow_read(path).ok();
+    }
+    if !allow_network {
+        caps.block_network();
+    }
+    caps
+}
+
+// Main shell: block network
+let shell_caps = build_shell_sandbox_caps(&mounts, false);
+
+// Browser shell: allow network (needs localhost access to Pinchtab)
+let browser_caps = build_shell_sandbox_caps(&mounts, true);
+```
 
 **Phase 4c: Hardening status reporting**:
 
