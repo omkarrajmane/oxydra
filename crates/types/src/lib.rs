@@ -6,6 +6,8 @@ mod memory;
 mod model;
 mod proactive;
 mod provider;
+pub mod policy;
+mod policy_merge;
 mod runner;
 mod scheduler;
 mod session;
@@ -55,6 +57,11 @@ pub use model::{
 };
 pub use proactive::ProactiveSender;
 pub use provider::{Provider, ProviderStream};
+pub use policy::{
+    DefaultToolPermissionHandler, EffectiveRunPolicy, RolloutMode, RunPolicyInput, StopReason,
+    ToolPermissionContext, ToolPermissionDecision, ToolPermissionHandler, ToolPolicyInput,
+};
+pub use policy_merge::merge_policy;
 pub use runner::{
     BootstrapEnvelopeError, BrowserToolConfig, ChannelsConfig, DEFAULT_PINCHTAB_PORT,
     DEFAULT_RUNNER_CONFIG_VERSION, DEFAULT_RUNNER_TIMEZONE, ExecCommand, ExecCommandAck,

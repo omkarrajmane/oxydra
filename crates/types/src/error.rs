@@ -52,6 +52,8 @@ pub enum ToolError {
     InvalidArguments { tool: String, message: String },
     #[error("tool execution failed for {tool}: {message}")]
     ExecutionFailed { tool: String, message: String },
+    #[error("tool execution blocked by policy: {0:?}")]
+    PolicyViolation(crate::policy::StopReason),
     #[error("tool serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
 }
