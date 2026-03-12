@@ -16,6 +16,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tools = { path = "../tools" }
 tracing = "0.1"
 tiktoken-rs = "0.9"
+thiserror = "1"
 types = { path = "../types" }
 uuid = { version = "1", features = ["v4"] }
 
