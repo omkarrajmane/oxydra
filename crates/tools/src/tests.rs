@@ -846,6 +846,10 @@ mod memory_tool_tests {
             channel_id: None,
             channel_context_id: None,
             inbound_attachments: None,
+            policy: None,
+            permission_handler: None,
+            turn: None,
+            remaining_budget: None,
         }
     }
 

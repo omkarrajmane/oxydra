@@ -60,6 +60,27 @@ impl ToolRegistry {
         self.tools.values().map(|tool| tool.schema()).collect()
     }
 
+    pub fn filtered_schemas(
+        &self,
+        effective_toolset: Option<&std::collections::HashSet<String>>,
+        disallowed: &std::collections::HashSet<String>,
+    ) -> Vec<FunctionDecl> {
+        self.tools
+            .values()
+            .filter_map(|tool| {
+                let schema = tool.schema();
+                let is_allowed = effective_toolset.map_or(true, |set| set.contains(&schema.name));
+                let is_disallowed = disallowed.contains(&schema.name);
+                
+                if is_allowed && !is_disallowed {
+                    Some(schema)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn set_security_policy(&mut self, policy: Arc<dyn SecurityPolicy>) {
         self.security_policy = Some(policy);
     }
@@ -116,9 +137,38 @@ impl ToolRegistry {
             .get(name)
             .ok_or_else(|| execution_failed(name, format!("unknown tool `{name}`")))?;
 
+        if let Some(policy) = &context.policy {
+            if policy.disallowed_tools.contains(name) {
+                return Err(ToolError::PolicyViolation(types::StopReason::ToolDisallowed));
+            }
+        }
+
+        let mut final_args = args.to_string();
+        if let Some(handler) = &context.permission_handler {
+            let is_auto_approved = context.policy.as_ref().map_or(false, |p| p.auto_approve_tools.contains(name));
+            if !is_auto_approved {
+                let parsed_args = serde_json::from_str(args).unwrap_or_default();
+                let perm_context = types::ToolPermissionContext {
+                    session_id: context.session_id.clone().unwrap_or_default(),
+                    user_id: context.user_id.clone().unwrap_or_default(),
+                    turn: context.turn.unwrap_or(0),
+                    remaining_budget: context.remaining_budget.unwrap_or(0),
+                };
+                match handler.check_permission(name, &parsed_args, &perm_context).await {
+                    types::ToolPermissionDecision::Allow => {}
+                    types::ToolPermissionDecision::Deny { .. } => {
+                        return Err(ToolError::PolicyViolation(types::StopReason::ToolPermissionDenied));
+                    }
+                    types::ToolPermissionDecision::AllowWithModification { modified_args } => {
+                        final_args = serde_json::to_string(&modified_args).map_err(ToolError::Serialization)?;
+                    }
+                }
+            }
+        }
+
         safety_gate(tool.safety_tier())?;
         if let Some(policy) = &self.security_policy {
-            let arguments = parse_policy_args(name, args)?;
+            let arguments = parse_policy_args(name, &final_args)?;
             policy
                 .enforce(name, tool.safety_tier(), &arguments)
                 .map_err(|violation| {
@@ -133,7 +183,7 @@ impl ToolRegistry {
         }
 
         let timeout = tool.timeout();
-        let output = tokio::time::timeout(timeout, tool.execute(args, context))
+        let output = tokio::time::timeout(timeout, tool.execute(&final_args, context))
             .await
             .map_err(|_| execution_failed(name, format!("tool timed out after {timeout:?}")))??;
 
@@ -350,5 +400,103 @@ fn register_runtime_tools(
             BROWSER_TOOL_NAME,
             browser::BrowserTool::new(config.pinchtab_base_url.clone(), session),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    mod filtered {
+        use super::*;
+
+        #[test]
+        fn returns_all_when_no_policy() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+
+            let disallowed = HashSet::new();
+            let schemas = registry.filtered_schemas(None, &disallowed);
+            
+            assert_eq!(schemas.len(), 2);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(names.contains(FILE_READ_TOOL_NAME));
+            assert!(names.contains(FILE_WRITE_TOOL_NAME));
+        }
+
+        #[test]
+        fn filters_by_allowed_subset() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+            registry.register(SHELL_EXEC_TOOL_NAME, BashTool::default());
+
+            let mut allowed = HashSet::new();
+            allowed.insert(FILE_READ_TOOL_NAME.to_string());
+            allowed.insert(SHELL_EXEC_TOOL_NAME.to_string());
+            
+            let disallowed = HashSet::new();
+            let schemas = registry.filtered_schemas(Some(&allowed), &disallowed);
+            
+            assert_eq!(schemas.len(), 2);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(names.contains(FILE_READ_TOOL_NAME));
+            assert!(names.contains(SHELL_EXEC_TOOL_NAME));
+            assert!(!names.contains(FILE_WRITE_TOOL_NAME));
+        }
+
+        #[test]
+        fn returns_empty_when_allowed_is_empty() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+
+            let allowed = HashSet::new();
+            let disallowed = HashSet::new();
+            let schemas = registry.filtered_schemas(Some(&allowed), &disallowed);
+            
+            assert!(schemas.is_empty());
+        }
+
+        #[test]
+        fn disallowed_overrides_allowed() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+            registry.register(SHELL_EXEC_TOOL_NAME, BashTool::default());
+
+            let mut allowed = HashSet::new();
+            allowed.insert(FILE_READ_TOOL_NAME.to_string());
+            allowed.insert(FILE_WRITE_TOOL_NAME.to_string());
+            
+            let mut disallowed = HashSet::new();
+            disallowed.insert(FILE_WRITE_TOOL_NAME.to_string());
+            
+            let schemas = registry.filtered_schemas(Some(&allowed), &disallowed);
+            
+            assert_eq!(schemas.len(), 1);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(names.contains(FILE_READ_TOOL_NAME));
+            assert!(!names.contains(FILE_WRITE_TOOL_NAME));
+        }
+
+        #[test]
+        fn disallowed_works_without_allowed_set() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+
+            let mut disallowed = HashSet::new();
+            disallowed.insert(FILE_READ_TOOL_NAME.to_string());
+            
+            let schemas = registry.filtered_schemas(None, &disallowed);
+            
+            assert_eq!(schemas.len(), 1);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(!names.contains(FILE_READ_TOOL_NAME));
+            assert!(names.contains(FILE_WRITE_TOOL_NAME));
+        }
     }
 }
