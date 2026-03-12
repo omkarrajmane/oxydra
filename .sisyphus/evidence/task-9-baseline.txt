@@ -1,0 +1,911 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Blocking waiting for file lock on artifact directory
+   Compiling chrono v0.4.44
+   Compiling chrono-tz v0.10.4
+   Compiling libsql v0.9.29
+   Compiling cron v0.15.0
+   Compiling types v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/types)
+warning: unreachable pattern
+   --> crates/types/src/policy.rs:288:13
+    |
+288 |             _ => "unknown", // Wildcard for future variants
+    |             ^ no value can reach this
+    |
+note: multiple earlier patterns match some of the same values
+   --> crates/types/src/policy.rs:288:13
+    |
+280 |             StopReason::Completed => "completed",
+    |             --------------------- matches some of the same values
+281 |             StopReason::Cancelled => "cancelled",
+    |             --------------------- matches some of the same values
+282 |             StopReason::MaxTurns => "max_turns",
+    |             -------------------- matches some of the same values
+283 |             StopReason::MaxRuntimeExceeded => "max_runtime",
+    |             ------------------------------ matches some of the same values
+...
+288 |             _ => "unknown", // Wildcard for future variants
+    |             ^ ...and 4 other patterns collectively make this unreachable
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+   --> crates/types/src/policy.rs:303:13
+    |
+303 |             _ => "unknown",
+    |             ^ no value can reach this
+    |
+note: multiple earlier patterns match some of the same values
+   --> crates/types/src/policy.rs:303:13
+    |
+295 |             StopReason::Completed => "completed",
+    |             --------------------- matches some of the same values
+296 |             StopReason::Cancelled => "cancelled",
+    |             --------------------- matches some of the same values
+297 |             StopReason::MaxTurns => "max_turns",
+    |             -------------------- matches some of the same values
+298 |             StopReason::MaxRuntimeExceeded => "max_runtime",
+    |             ------------------------------ matches some of the same values
+...
+303 |             _ => "unknown",
+    |             ^ ...and 4 other patterns collectively make this unreachable
+
+   Compiling memory v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/memory)
+   Compiling provider v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/provider)
+   Compiling shell-daemon v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/shell-daemon)
+   Compiling tui v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/tui)
+   Compiling tools-macros v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/tools-macros)
+warning: `types` (lib test) generated 2 warnings
+   Compiling tools v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/tools)
+   Compiling runtime v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/runtime)
+   Compiling gateway v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/gateway)
+   Compiling channels v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/channels)
+   Compiling sdk v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/sdk)
+warning: unused variable: `progress_sender`
+    --> crates/runtime/src/tests.rs:4185:9
+     |
+4185 |         progress_sender: Option<types::DelegationProgressSender>,
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_sender`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `parent_cancellation`
+    --> crates/runtime/src/tests.rs:4184:9
+     |
+4184 |         parent_cancellation: &CancellationToken,
+     |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent_cancellation`
+
+warning: variable does not need to be mutable
+    --> crates/runtime/src/tests.rs:4391:9
+     |
+4391 |     let mut context = Context {
+     |         ----^^^^^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `inner` is never read
+    --> crates/runtime/src/tests.rs:4144:5
+     |
+4142 | struct RecordingDelegationExecutor {
+     |        --------------------------- field in this struct
+4143 |     records: Arc<Mutex<Vec<DelegationRecord>>>,
+4144 |     inner: RuntimeDelegationExecutor,
+     |     ^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `parent_user_id` and `goal` are never read
+    --> crates/runtime/src/tests.rs:4150:5
+     |
+4148 | struct DelegationRecord {
+     |        ---------------- fields in this struct
+4149 |     parent_session_id: String,
+4150 |     parent_user_id: String,
+     |     ^^^^^^^^^^^^^^
+4151 |     agent_name: String,
+4152 |     goal: String,
+     |     ^^^^
+     |
+     = note: `DelegationRecord` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+   Compiling runner v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/runner)
+warning: `runtime` (lib test) generated 5 warnings (run `cargo fix --lib -p runtime --tests` to apply 3 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.76s
+     Running unittests src/lib.rs (target/debug/deps/channels-806f2b776a6c88f9)
+
+running 34 tests
+test audit::tests::now_iso8601_returns_valid_format ... ok
+test sender_auth::tests::empty_bindings_reject_everyone ... ok
+test sender_auth::tests::multiple_bindings_flatten_into_single_set ... ok
+test sender_auth::tests::duplicate_platform_ids_deduplicated ... ok
+test sender_auth::tests::multiple_platform_ids_in_one_binding_all_authorize ... ok
+test sender_auth::tests::known_sender_is_authorized ... ok
+test sender_auth::tests::unknown_sender_is_rejected ... ok
+test telegram::tests::channel_context_id_forum_topic ... ok
+test telegram::tests::channel_context_id_forum_topic_with_negative_chat ... ok
+test telegram::tests::channel_context_id_negative_chat_id ... ok
+test telegram::tests::channel_context_id_regular_chat ... ok
+test telegram::tests::markdown_to_html_bold ... ok
+test telegram::tests::markdown_to_html_code_block ... ok
+test session_map::tests::get_returns_none_for_unknown_context ... ok
+test session_map::tests::set_then_get_returns_session_id ... ok
+test session_map::tests::set_overwrites_previous_mapping ... ok
+test telegram::tests::markdown_to_html_code_block_with_lang ... ok
+test session_map::tests::different_channels_are_independent ... ok
+test audit::tests::audit_logger_creates_parent_directories ... ok
+test telegram::tests::markdown_to_html_header_becomes_bold ... ok
+test telegram::tests::markdown_to_html_escapes_special_chars ... ok
+test telegram::tests::markdown_to_html_inline_code ... ok
+test telegram::tests::markdown_to_html_italic ... ok
+test telegram::tests::markdown_to_html_link ... ok
+test telegram::tests::markdown_to_html_mixed_formatting ... ok
+test telegram::tests::markdown_to_html_plain_text_unchanged ... ok
+test telegram::tests::markdown_to_html_strikethrough ... ok
+test telegram::tests::split_message_short_text_returns_single_chunk ... ok
+test telegram::tests::split_message_splits_at_newline_when_no_paragraph ... ok
+test telegram::tests::split_message_splits_at_paragraph_boundary ... ok
+test audit::tests::audit_logger_creates_log_file_and_writes_entry ... ok
+test tests::registry_supports_register_lookup_and_remove ... ok
+test audit::tests::audit_logger_appends_multiple_entries ... ok
+test tests::collect_channel_health_reports_status_and_errors ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/gateway-5a72f7b43f9335e4)
+
+running 42 tests
+test tests::internal_api_enforces_max_sessions_per_user ... ok
+test tests::handshake_rejects_unsupported_protocol_version ... ok
+test tests::handshake_returns_hello_ack_with_stable_session ... ok
+test tests::create_new_session_creates_fresh_session_with_uuid ... ok
+test tests::default_session_backward_compat ... ok
+test tests::cancel_all_active_turns_returns_error_when_idle ... ok
+test tests::health_check_includes_startup_status_when_gateway_has_bootstrap_state ... ok
+test tests::cancel_all_active_turns_cancels_all_user_sessions ... ok
+test tests::internal_api_get_existing_session_by_id ... ok
+test tests::list_sessions_filters_subagent_sessions ... ok
+test tests::internal_api_create_and_list_sessions ... ok
+test tests::send_turn_rejects_invalid_attachment_payload ... ok
+test tests::create_session_frame_creates_and_switches_to_new_session ... ok
+test tests::runner_failure_maps_to_gateway_error_frame ... ok
+test tests::session_cleanup_archives_stale_sessions_and_drops_context ... ok
+test tests::session_cleanup_skips_sessions_with_active_subscribers ... ok
+test tests::list_sessions_returns_user_sessions ... ok
+test tests::session_id_remains_stable_for_user ... ok
+test tests::queued_turn_waits_for_available_permit ... ok
+test tests::session_persisted_to_store_on_creation ... ok
+test tests::evicted_session_can_be_resumed_and_used_again ... ok
+test tests::create_session_with_agent_name_routes_turn_with_that_agent ... ok
+test tests::validate_inline_attachments_rejects_invalid_mime ... ok
+test tests::validate_inline_attachments_rejects_oversized_file ... ok
+test tests::validate_inline_attachments_rejects_too_many ... ok
+test turn_runner::tests::augment_prompt_strips_control_characters_from_mime_type ... ok
+test turn_runner::tests::augment_prompt_truncates_long_mime_type ... ok
+test turn_runner::tests::augment_prompt_uses_singular_noun_for_single_attachment ... ok
+test turn_runner::tests::augment_prompt_with_attachment_metadata_is_noop_without_attachments ... ok
+test turn_runner::tests::augment_prompt_with_attachment_metadata_appends_attachment_instructions ... ok
+test tests::session_id_in_hello_joins_existing_session ... ok
+test tests::cancel_active_turn_ignores_turn_id_mismatch ... ok
+test tests::switch_session_changes_active_session ... ok
+test tests::switch_to_nonexistent_session_returns_error ... ok
+test tests::switch_session_supports_prefix_matching ... ok
+test tests::two_tui_windows_with_separate_sessions_work_independently ... ok
+test tests::cancel_active_turn_cancels_only_current_turn ... ok
+test tests::send_turn_streams_deltas_and_completes ... ok
+test tests::touch_session_called_on_turn_completion ... ok
+test tests::reconnect_after_disconnected_completion_receives_terminal_outcome ... ok
+test tests::reconnect_during_active_turn_reports_running_and_continues_streaming ... ok
+test tests::two_sessions_for_same_user_run_turns_concurrently ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running unittests src/lib.rs (target/debug/deps/memory-e9f57719f37e5dea)
+
+running 63 tests
+test session_store::tests::get_nonexistent_session_returns_none ... ok
+test session_store::tests::create_and_get_session ... ok
+test tests::cadence_interval_computes_next_run ... ok
+test session_store::tests::update_display_name_sets_name ... ok
+test tests::cadence_once_future_returns_some ... ok
+test tests::cadence_once_past_returns_none ... ok
+test session_store::tests::archive_session_marks_as_archived ... ok
+test tests::cadence_cron_computes_next_run_in_timezone ... ok
+test session_store::tests::set_and_get_channel_session_round_trips ... ok
+test session_store::tests::duplicate_create_is_idempotent ... ok
+test tests::format_in_timezone_returns_local_for_cron ... ok
+test session_store::tests::set_channel_session_updates_existing_mapping ... ok
+test session_store::tests::list_sessions_filters_by_user ... ok
+test session_store::tests::create_session_with_parent ... ok
+test tests::format_in_timezone_returns_none_for_interval ... ok
+test tests::from_config_returns_none_when_memory_is_disabled ... ok
+test session_store::tests::forum_topic_maps_to_separate_session ... ok
+test session_store::tests::get_channel_session_returns_none_for_unknown_mapping ... ok
+test session_store::tests::list_sessions_excludes_archived_by_default ... ok
+test tests::local_mode_surfaces_unreachable_database_path_errors ... ok
+test session_store::tests::channel_session_mapping_is_scoped_by_channel_and_context ... ok
+test session_store::tests::touch_session_updates_last_active_at ... ok
+test tests::migration_failures_are_surfaced_without_silent_success ... ok
+test tests::parse_cadence_rejects_invalid_interval ... ok
+test tests::parse_cadence_rejects_invalid_type ... ok
+test tests::parse_cadence_roundtrips_all_types ... ok
+test tests::remote_connection_strategy_requires_auth_token ... ok
+test tests::delete_note_returns_false_for_nonexistent_note ... ok
+test tests::initialization_applies_pending_migrations_and_verifies_schema ... ok
+test tests::enabled_local_memory_initializes_with_missing_parent_directory ... ok
+test tests::hybrid_query_fails_fast_when_native_vector_index_is_missing ... ok
+test tests::hybrid_query_breaks_ties_by_recency_then_chunk_id ... ok
+test tests::delete_note_removes_chunks_and_event ... ok
+test tests::chunks_fts_triggers_keep_index_synchronized ... ok
+test tests::list_sessions_returns_recent_first_and_honors_limit ... ok
+test tests::hybrid_query_merges_vector_and_fts_with_weighted_rank ... ok
+test tests::legacy_database_migrates_to_hybrid_schema_without_data_loss ... ok
+test tests::note_user_scoping_isolates_across_users ... ok
+test tests::hybrid_query_tag_filter_requires_all_requested_tags ... ok
+test tests::scheduler_store_count_and_limit ... ok
+test tests::scheduler_store_create_get_roundtrip ... ok
+test tests::scheduler_store_delete_cascades_runs ... ok
+test tests::scheduler_store_due_schedules_filters_correctly ... ok
+test tests::scratchpad_write_enforces_limits ... ok
+test tests::scheduler_store_search_with_filters ... ok
+test tests::scheduler_store_update_pause_resume ... ok
+test tests::validate_cadence_accepts_valid_interval ... ok
+test tests::validate_cadence_rejects_invalid_timezone ... ok
+test tests::validate_cadence_rejects_too_frequent_interval ... ok
+test tests::note_save_search_update_delete_roundtrip ... ok
+test tests::scheduler_store_record_run_and_prune_history ... ok
+test tests::same_content_notes_stay_independent_on_update_delete_and_search ... ok
+test tests::store_deduplicates_reindexing_by_chunk_hash ... ok
+test tests::scratchpad_state_roundtrip_is_session_scoped ... ok
+test tests::store_indexes_message_content_into_chunks_and_vectors ... ok
+test tests::store_note_creates_chunks_with_note_id_in_metadata ... ok
+test tests::store_note_creates_searchable_conversation_event ... ok
+test tests::store_rejects_non_monotonic_sequence_for_session ... ok
+test tests::vector_top_k_retrieval_smoke_uses_native_index ... ok
+test tests::store_note_multiple_notes_in_same_session_coexist ... ok
+test tests::store_preserves_existing_summary_state_in_session_state ... ok
+test tests::summary_state_write_uses_epoch_compare_and_swap ... ok
+test tests::store_recall_and_forget_are_durable_across_restarts ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running unittests src/lib.rs (target/debug/deps/provider-4690db4b4bed6fe7)
+
+running 115 tests
+test anthropic::sse_event_deser_tests::message_start_without_usage ... ok
+test anthropic::sse_event_deser_tests::message_delta_null_stop_reason ... ok
+test anthropic::sse_event_deser_tests::content_block_stop_parses ... ok
+test anthropic::sse_event_deser_tests::content_block_start_text ... ok
+test anthropic::sse_event_deser_tests::content_block_start_thinking ... ok
+test anthropic::sse_event_deser_tests::ping_event_parses ... ok
+test anthropic::sse_event_deser_tests::message_start_with_usage ... ok
+test anthropic::sse_event_deser_tests::message_stop_parses ... ok
+test anthropic::sse_event_deser_tests::message_delta_without_usage ... ok
+test anthropic::sse_event_deser_tests::content_block_delta_thinking ... ok
+test anthropic::sse_event_deser_tests::content_block_delta_text ... ok
+test anthropic::sse_event_deser_tests::content_block_start_tool_use ... ok
+test anthropic::sse_event_deser_tests::message_delta_with_stop_reason_and_usage ... ok
+test anthropic::sse_event_deser_tests::content_block_delta_input_json ... ok
+test anthropic::sse_event_deser_tests::stream_error_event ... ok
+test anthropic::sse_event_deser_tests::stream_error_without_message ... ok
+test anthropic::sse_event_deser_tests::stream_event_envelope_extracts_type ... ok
+test anthropic::sse_event_deser_tests::unknown_fields_are_tolerated ... ok
+test anthropic::tool_call_accumulator_tests::default_accumulator_is_empty ... ok
+test anthropic::tool_call_accumulator_tests::start_tool_assigns_sequential_ordinals ... ok
+test anthropic::tool_call_accumulator_tests::append_json_accumulates_arguments ... ok
+test anthropic::tool_call_accumulator_tests::index_remapping_skips_non_tool_blocks ... ok
+test anthropic::tool_call_accumulator_tests::multiple_tools_accumulate_independently ... ok
+test anthropic::tool_call_accumulator_tests::append_json_without_prior_start_tool_assigns_ordinal ... ok
+test responses::tests::ordinal_assigned_in_append_when_no_prior_register ... ok
+test responses::tests::single_tool_call_gets_ordinal_zero ... ok
+test responses::tests::two_tool_calls_get_distinct_ordinals_zero_and_one ... ok
+test responses::tests::three_tool_calls_get_consecutive_ordinals ... ok
+test responses::tests::completed_event_skips_tool_calls_when_streaming_deltas_already_sent ... ok
+test responses::tests::completed_event_emits_tool_calls_when_only_output_item_added_was_seen ... ok
+test responses::tests::completed_event_emits_sequential_indices_when_no_streaming_deltas ... ok
+test tests::anthropic_request_includes_image_block_for_image_attachment ... ok
+test tests::anthropic_request_includes_document_block_for_pdf_attachment ... ok
+test tests::anthropic_stream_completion_tokens_combined_at_message_delta ... ok
+test tests::anthropic_response_normalization_maps_text_and_tool_use ... ok
+test tests::anthropic_sse_parser_handles_comment_lines_and_crlf ... ok
+test tests::anthropic_stream_empty_payload_returns_empty_items ... ok
+test tests::anthropic_stream_empty_text_delta_not_emitted ... ok
+test tests::anthropic_stream_error_event_produces_terminal_error ... ok
+test tests::anthropic_stream_error_without_message_uses_default ... ok
+test tests::anthropic_stream_finish_reason_from_message_delta ... ok
+test tests::anthropic_stream_invalid_json_returns_error ... ok
+test tests::anthropic_stream_message_start_without_usage_emits_nothing ... ok
+test tests::anthropic_stream_message_stop_without_prior_message_delta ... ok
+test tests::anthropic_stream_multiple_tools_interleaved_with_text ... ok
+test tests::anthropic_stream_ping_is_ignored ... ok
+test tests::anthropic_stream_prompt_tokens_emitted_at_message_start ... ok
+test tests::anthropic_stream_text_delta_emits_text ... ok
+test tests::anthropic_stream_thinking_delta_emits_reasoning ... ok
+test tests::anthropic_stream_tool_call_accumulation ... ok
+test tests::anthropic_stream_unknown_delta_type_is_ignored ... ok
+test tests::anthropic_stream_tool_call_index_remapping ... ok
+test tests::anthropic_stream_unknown_event_type_is_ignored ... ok
+test tests::api_key_resolution_uses_expected_precedence ... ok
+test tests::anthropic_validate_rejects_audio_attachment ... ok
+test tests::gemini_function_call_response_mapping ... ok
+test tests::gemini_request_includes_inline_data_for_image_attachment ... ok
+test tests::gemini_request_includes_inline_data_for_multiple_attachments ... ok
+test tests::gemini_request_omits_assistant_text_when_tool_calls_present ... ok
+test tests::anthropic_streaming_request_includes_stream_field ... ok
+test tests::gemini_request_serialization_snapshot ... ok
+test tests::anthropic_request_normalization_snapshot_is_stable ... ok
+test tests::gemini_response_normalization ... ok
+test tests::gemini_response_normalization_includes_inline_data_attachments ... ok
+test tests::gemini_stream_chunk_parsing ... ok
+test tests::gemini_tool_result_encoding ... ok
+test tests::anthropic_unknown_models_are_rejected_before_network_request ... ok
+test tests::gemini_unknown_models_are_rejected_before_network_request ... ok
+test tests::gemini_validate_rejects_audio_when_model_only_supports_image ... ok
+test tests::live_anthropic_stream_smoke_emits_text_or_tool_calls ... ignored, requires ANTHROPIC_API_KEY and network access
+test tests::live_openai_smoke_normalizes_response ... ignored, requires OPENAI_API_KEY and network access
+test tests::anthropic_transport_errors_are_mapped ... ok
+test tests::gemini_transport_errors_are_mapped ... ok
+test tests::openai_request_includes_image_url_content_for_image_attachment ... ok
+test tests::openai_validate_rejects_attachment_for_non_attachment_model ... ok
+test tests::openai_validate_rejects_audio_attachment ... ok
+test tests::partial_input_on_chained_turn ... ok
+test tests::anthropic_response_parse_errors_are_mapped ... ok
+test tests::reliable_provider_does_not_retry_non_retriable_errors ... ok
+test tests::gemini_http_status_errors_are_mapped ... ok
+test tests::anthropic_stream_http_error_before_streaming ... ok
+test tests::anthropic_http_status_errors_are_mapped ... ok
+test tests::http_status_errors_are_mapped ... ok
+test tests::gemini_stream_connection_lost_without_finish_reason ... ok
+test tests::anthropic_stream_connection_lost_without_message_stop ... ok
+test tests::response_normalization_maps_message_and_finish_reason ... ok
+test tests::request_normalization_maps_messages_and_tools ... ok
+test tests::anthropic_end_to_end_stream_via_one_shot_server ... ok
+test tests::responses_completed_event_does_not_repeat_streamed_text ... ok
+test tests::responses_request_includes_input_image_for_image_attachment ... ok
+test tests::desync_fallback_resets_and_retries ... ok
+test tests::responses_stream_request_normalization_sets_stream_true ... ok
+test tests::responses_sse_event_parsing ... ok
+test tests::responses_validate_rejects_audio_attachment ... ok
+test tests::sse_parser_handles_fragmented_frames ... ok
+test tests::streaming_request_normalization_enables_stream_and_usage ... ok
+test tests::stream_payload_normalization_maps_text_tool_usage_and_finish_reason ... ok
+test tests::responses_request_serialization_snapshot ... ok
+test tests::tool_call_deltas_reassemble_split_unicode_escape_sequences ... ok
+test tests::tool_call_deltas_reassemble_arguments_across_payloads ... ok
+test tests::streaming_request_normalization_snapshot_is_stable ... ok
+test tests::previous_response_id_updated_on_completion ... ok
+test tests::validate_context_passes_when_no_attachments_present ... ok
+test tests::responses_provider_uses_openai_catalog ... ok
+test tests::response_parse_errors_are_mapped ... ok
+test tests::unknown_models_are_rejected_before_network_request ... ok
+test tests::transport_errors_are_mapped ... ok
+test tests::responses_stream_connection_lost_without_completed_event ... ok
+test tests::stream_finishes_without_connection_lost_when_done_is_received ... ok
+test tests::stream_emits_connection_lost_when_done_sentinel_missing ... ok
+test tests::reliable_provider_enforces_max_attempts ... ok
+test tests::reliable_provider_retries_transport_failures_then_succeeds ... ok
+test tests::gemini_provider_uses_default_base_url_when_empty ... ok
+test tests::anthropic_provider_uses_default_base_url_when_empty ... ok
+test tests::openai_provider_uses_default_base_url_when_empty ... ok
+
+test result: ok. 113 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running unittests src/lib.rs (target/debug/deps/runner-68c9d5249a57959a)
+
+running 290 tests
+test bootstrap::tests::apply_web_search_config_does_not_override_existing_env_vars ... ok
+test bootstrap::tests::apply_web_search_config_resolves_google_api_key_via_indirection ... ok
+test bootstrap::tests::apply_web_search_config_sets_provider_and_base_url_env_vars ... ok
+test bootstrap::tests::apply_web_search_config_sets_searxng_specific_fields ... ok
+test bootstrap::tests::build_system_prompt_contains_example_turn ... ok
+test bootstrap::tests::build_system_prompt_contains_anti_patterns ... ok
+test bootstrap::tests::build_system_prompt_contains_agent_identity_framing ... ok
+test bootstrap::tests::build_system_prompt_closing_reminder_at_end ... ok
+test bootstrap::tests::build_system_prompt_contains_memory_save_triggers ... ok
+test bootstrap::tests::build_system_prompt_contains_pre_action_requirement ... ok
+test bootstrap::tests::build_system_prompt_includes_skills_note_when_provided ... ok
+test bootstrap::tests::build_system_prompt_includes_memory_guidance_when_memory_is_enabled ... ok
+test bootstrap::tests::build_system_prompt_omits_memory_guidance_when_memory_is_disabled ... ok
+test bootstrap::tests::build_system_prompt_omits_skills_section_when_empty ... ok
+test bootstrap::tests::build_memory_backend_returns_none_when_memory_is_disabled ... ok
+test bootstrap::tests::build_system_prompt_operational_loop_contains_all_phases ... ok
+test bootstrap::tests::build_system_prompt_retry_protocol_mentions_distinct_attempts_and_escalation ... ok
+test bootstrap::tests::build_system_prompt_scratchpad_has_usage_threshold ... ok
+test bootstrap::tests::build_system_prompt_user_ask_boundary_is_restrictive ... ok
+test bootstrap::tests::build_system_prompt_includes_specialist_agent_note ... ok
+test bootstrap::tests::deprecated_model_emits_warning ... ok
+test bootstrap::tests::full_bootstrap_with_registry_config ... ok
+test bootstrap::tests::openai_responses_provider_uses_openai_catalog ... ok
+test bootstrap::tests::runtime_limits_maps_budget_retrieval_and_summarization_settings ... ok
+test bootstrap::tests::load_agent_config_applies_profile_overrides ... ok
+test catalog::tests::filter_catalog_with_empty_provider_list_yields_empty_catalog ... ok
+test catalog::tests::filter_excludes_non_configured_providers ... ok
+test catalog::tests::filter_to_default_providers_excludes_mistral ... ok
+test catalog::tests::canonicalize_json_ends_with_newline ... ok
+test catalog::tests::load_overrides_returns_default_when_file_missing ... ok
+test catalog::tests::regenerate_snapshot_is_deterministic ... ok
+test catalog::tests::overlay_preserves_existing_overrides ... ok
+test catalog::tests::verify_detects_drift ... ok
+test bootstrap::tests::load_agent_config_honors_file_env_and_cli_precedence ... ok
+test bootstrap::tests::load_agent_config_maps_nested_env_keys ... ok
+test skills::tests::actual_browser_skill_content_within_token_cap_and_has_key_sections ... ok
+test skills::tests::actual_browser_skill_discovers_and_activates ... ok
+test skills::tests::actual_browser_skill_appears_in_formatted_prompt ... ok
+test skills::tests::actual_browser_skill_absent_from_prompt_without_pinchtab_url ... ok
+test bootstrap::tests::load_agent_config_parses_tools_web_search_section ... ok
+test skills::tests::actual_browser_skill_parses_with_correct_metadata ... ok
+test skills::tests::actual_browser_skill_does_not_activate_without_shell ... ok
+test skills::tests::actual_browser_skill_renders_with_pinchtab_url_substituted ... ok
+test bootstrap::tests::load_agent_config_rejects_remote_memory_without_auth_token ... ok
+test skills::tests::browser_skill_activates_when_shell_ready_and_pinchtab_url_set ... ok
+test skills::tests::browser_skill_inactive_when_pinchtab_url_missing ... ok
+test skills::tests::browser_skill_inactive_when_shell_unavailable ... ok
+test skills::tests::browser_skill_renders_pinchtab_url ... ok
+test bootstrap::tests::load_agent_config_rejects_unsupported_config_version ... ok
+test skills::tests::discover_skills_finds_files_in_system_dir ... ok
+test skills::tests::discover_skills_finds_folder_based_skill ... ok
+test skills::tests::discover_skills_folder_in_workspace_overrides_folder_in_system ... ok
+test skills::tests::discover_skills_ignores_folder_without_skill_md ... ok
+test skills::tests::discover_skills_ignores_non_md_files ... ok
+test skills::tests::discover_skills_folder_skill_overrides_bare_file_with_same_name ... ok
+test skills::tests::discover_skills_folder_with_references_is_found ... ok
+test skills::tests::discover_skills_mixes_folder_and_bare_file_skills ... ok
+test skills::tests::discover_skills_sorts_by_priority ... ok
+test bootstrap::tests::provider_type_model_mismatch_rejected ... ok
+test skills::tests::discover_skills_workspace_overrides_system ... ok
+test skills::tests::evaluate_activation_always_skill_is_active_regardless ... ok
+test skills::tests::embedded_skills_include_browser_automation ... ok
+test skills::tests::embedded_skills_found_with_empty_filesystem_dirs ... ok
+test catalog::tests::show_does_not_panic_on_committed_snapshot ... ok
+test skills::tests::discover_skills_workspace_overrides_user_overrides_system ... ok
+test skills::tests::evaluate_activation_does_not_activate_when_shell_registered_but_unavailable ... ok
+test skills::tests::evaluate_activation_auto_skill_inactive_when_env_missing ... ok
+test skills::tests::evaluate_activation_manual_skill_is_never_auto_active ... ok
+test skills::tests::evaluate_activation_auto_skill_activates_when_conditions_met ... ok
+test skills::tests::evaluate_activation_auto_skill_inactive_when_tool_not_ready ... ok
+test skills::tests::format_skills_prompt_contains_header_and_content ... ok
+test skills::tests::format_skills_prompt_empty_when_no_skills ... ok
+test skills::tests::evaluate_activation_shell_ready_but_browser_required_and_unavailable ... ok
+test skills::tests::format_skills_prompt_includes_multiple_skills ... ok
+test skills::tests::filesystem_skill_overrides_embedded_builtin ... ok
+test skills::tests::extract_builtin_references_is_idempotent ... ok
+test skills::tests::load_and_render_skills_returns_empty_when_no_skills_found ... ok
+test skills::tests::parse_skill_file_enforces_token_cap ... ok
+test skills::tests::parse_skill_file_allows_body_at_token_cap ... ok
+test skills::tests::parse_skill_file_extracts_metadata_and_content ... ok
+test skills::tests::extract_builtin_references_writes_to_shared_dir ... ok
+test skills::tests::parse_skill_file_rejects_missing_required_fields ... ok
+test skills::tests::parse_skill_file_supports_env_alias ... ok
+test skills::tests::parse_skill_file_rejects_missing_frontmatter ... ok
+test skills::tests::render_skill_leaves_unknown_placeholders_intact ... ok
+test tests::apply_browser_shell_overlay_does_not_duplicate_existing_commands ... ok
+test tests::apply_browser_shell_overlay_adds_required_commands ... ok
+test tests::apply_browser_shell_overlay_preserves_existing_deny_and_replace_defaults ... ok
+test skills::tests::render_skill_substitutes_env_vars ... ok
+test skills::tests::load_and_render_skills_end_to_end ... ok
+test tests::browser_config_in_bootstrap_envelope_round_trips ... ok
+test skills::tests::parse_skill_file_uses_defaults_for_optional_fields ... ok
+test tests::build_browser_env_returns_expected_vars ... ok
+test tests::bootstrap_file_written_with_correct_content_for_non_process_tier ... ok
+test tests::configured_timezone_is_forwarded_to_both_guests ... ok
+test tests::container_tier_launch_request_includes_extra_env ... ok
+test tests::container_tier_launch_request_includes_bootstrap_file ... ok
+test tests::discover_skills_includes_embedded_builtins ... ok
+test tests::cli_timezone_env_is_forwarded_to_shell_env_without_shell_prefix ... ok
+test tests::control_logs_returns_entries_from_process_log_files ... ok
+test tests::control_logs_filters_by_stream ... ok
+test tests::control_logs_respects_tail_limit ... ok
+test tests::extract_socket_path_handles_nested_payload ... ok
+test tests::control_logs_returns_empty_after_shutdown ... ok
+test tests::extract_timestamp_parses_docker_timestamp ... ok
+test tests::extract_timestamp_returns_none_for_plain_text ... ok
+test tests::find_available_port_returns_some_port_in_range ... ok
+test tests::extract_builtin_references_writes_embedded_reference_files ... ok
+test tests::generate_bridge_token_produces_hex_string ... ok
+test tests::firecracker_config_rejects_oversized_bootstrap ... ok
+test tests::firecracker_config_without_bootstrap_copies_template ... ok
+test tests::firecracker_config_injects_bootstrap_into_boot_args ... ok
+test tests::copy_agent_config_to_workspace_materializes_merged_config ... ok
+test tests::control_logs_warns_when_sidecar_unavailable ... ok
+test tests::legacy_browser_cdp_url_in_user_behavior_is_rejected ... ok
+test tests::global_and_user_configs_load_with_validation ... ok
+test tests::parse_since_threshold_handles_duration_shorthand ... ok
+test tests::parse_since_threshold_handles_rfc3339 ... ok
+test tests::parse_since_threshold_returns_none_for_empty ... ok
+test tests::parse_since_threshold_returns_none_for_invalid ... ok
+test tests::generate_bridge_token_produces_unique_values ... ok
+test tests::loading_legacy_runner_user_config_auto_migrates_and_creates_backup ... ok
+test tests::loading_legacy_runner_global_config_auto_migrates_and_creates_backup ... ok
+test tests::read_log_file_tail_returns_last_n_lines ... ok
+test tests::read_log_file_tail_skips_empty_lines ... ok
+test tests::read_log_file_tail_with_since_filter ... ok
+test tests::requested_capabilities_apply_agent_defaults_before_user_overrides ... ok
+test tests::process_tier_launch_request_has_no_bootstrap_file ... ok
+test tests::sandbox_tier_resolution_honors_insecure_override ... ok
+test tests::microvm_tier_launch_request_includes_bootstrap_file ... ok
+test tests::send_control_to_daemon_reports_connection_refused_for_missing_socket ... ok
+test tests::runner_control_rejects_shutdown_for_unknown_user ... ok
+test tests::runner_resolves_relative_user_config_paths ... ok
+test tests::health_check_includes_log_dir_and_metadata ... ok
+test tests::runner_control_transport_handles_health_shutdown_and_invalid_frames ... ok
+test tests::serve_control_unix_listener_exits_after_shutdown ... ok
+test tests::startup_insecure_process_mode_disables_shell_and_browser ... ok
+test tests::shell_prefixed_env_vars_forwarded_to_shell_env_with_prefix_stripped ... ok
+test tests::send_control_to_daemon_receives_health_response ... ok
+test tests::startup_container_tier_uses_unix_sidecar_transport ... ok
+test tests::startup_applies_mount_resource_and_credential_overrides_to_launch_and_bootstrap ... ok
+test tests::startup_rejects_microvm_on_unsupported_host ... ok
+test tests::strip_timestamp_preserves_plain_text ... ok
+test tests::strip_timestamp_removes_docker_timestamp ... ok
+test tests::startup_process_tier_never_provisions_browser ... ok
+test tests::system_time_to_rfc3339_formats_unix_epoch ... ok
+test tests::startup_uses_linux_microvm_backend_and_vsock_sidecar ... ok
+test tests::startup_with_browser_disabled_has_no_browser_config ... ok
+test tests::startup_uses_macos_microvm_backend_with_unix_sidecar ... ok
+test tests::tui_connect_only_fails_with_clear_error_when_guest_is_absent ... ok
+test tests::workspace_provisioning_creates_expected_directories ... ok
+test tests::workspace_control_socket_path_uses_runner_constant ... ok
+test tests::tui_connect_only_never_spawns_guest_when_probe_fails ... ok
+test tests::startup_with_browser_enabled_populates_browser_env_in_shell_vm ... ok
+test web::catalog_api::tests::catalog_source_info_returns_string ... ok
+test tests::workspace_skill_overrides_embedded_builtin ... ok
+test web::catalog_api::tests::catalog_to_response_converts_correctly ... ok
+test web::catalog_api::tests::catalog_to_response_handles_empty_catalog ... ok
+test tests::tui_connect_only_succeeds_against_running_gateway_endpoint ... ok
+test web::catalog_api::tests::catalog_to_response_includes_all_model_fields ... ok
+test web::catalog_api::tests::catalog_to_response_handles_multiple_providers ... ok
+test web::config_read::tests::get_agent_config_returns_defaults_when_missing ... ok
+test bootstrap::tests::provider_factory_switches_by_config_selection ... ok
+test web::config_read::tests::get_runner_config_returns_defaults_when_file_missing ... ok
+test web::config_read::tests::get_runner_config_returns_file_contents ... ok
+test web::config_read::tests::get_user_config_returns_not_found_for_unknown_user ... ok
+test web::config_read::tests::list_users_returns_registered_users ... ok
+test web::config_write::tests::atomic_write_creates_parent_directories ... ok
+test web::catalog_api::tests::catalog_status_endpoint_returns_source_info ... ok
+test web::config_write::tests::atomic_write_no_stale_temp_files ... ok
+test web::config_write::tests::changed_fields_array_length_difference ... ok
+test web::config_write::tests::changed_fields_identical_returns_empty ... ok
+test web::config_write::tests::changed_fields_include_nested_paths ... ok
+test web::config_write::tests::changed_fields_removed_key ... ok
+test web::config_write::tests::backup_file_creates_timestamped_copy ... ok
+test web::config_write::tests::changed_fields_type_change ... ok
+test web::catalog_api::tests::load_resolved_catalog_returns_some_data ... ok
+test web::catalog_api::tests::catalog_status_has_nonzero_counts_from_pinned ... ok
+test web::config_write::tests::atomic_write_overwrites_existing ... ok
+test web::config_write::tests::merge_patch_adds_new_keys ... ok
+test web::config_write::tests::merge_patch_creates_nested_tables ... ok
+test web::config_write::tests::merge_patch_handles_array_values ... ok
+test web::config_write::tests::merge_patch_preserves_comments_and_secret_sentinel ... ok
+test web::config_write::tests::merge_patch_preserves_inline_comments_on_unchanged_lines ... ok
+test web::config_write::tests::merge_patch_rejects_non_object_root ... ok
+test web::config_write::tests::merge_patch_removes_null_keys ... ok
+test web::config_write::tests::delete_nonexistent_user_returns_404 ... ok
+test web::config_write::tests::patch_nonexistent_user_returns_404 ... ok
+test web::config_write::tests::config_roundtrip_preserves_values ... ok
+test web::catalog_api::tests::catalog_endpoint_returns_provider_data ... ok
+test web::config_write::tests::patch_returns_changed_fields ... ok
+test web::config_write::tests::patch_runner_config_creates_file_when_missing ... ok
+test web::config_write::tests::patch_runner_config_creates_backup ... ok
+test web::config_write::tests::create_user_rejects_duplicate ... ok
+test web::config_write::tests::prune_backups_no_op_when_fewer_than_limit ... ok
+test web::config_write::tests::validate_user_id_accepts_normal_names ... ok
+test web::config_write::tests::validate_agent_config_accepts_valid_patch ... ok
+test web::config_write::tests::validate_user_id_rejects_empty ... ok
+test web::config_write::tests::validate_user_id_rejects_path_traversal ... ok
+test web::config_write::tests::create_and_delete_user_roundtrip ... ok
+test web::catalog_api::tests::catalog_endpoint_returns_model_details ... ok
+test web::config_write::tests::validate_agent_config_rejects_invalid_runtime_limits ... ok
+test web::control::tests::restart_returns_not_found_for_unknown_user ... ok
+test web::control::tests::start_returns_not_found_for_unknown_user ... ok
+test web::masking::tests::deeply_nested_secrets_masked ... ok
+test web::masking::tests::does_not_mask_empty_secrets ... ok
+test web::masking::tests::does_not_mask_non_secret_fields ... ok
+test web::masking::tests::does_not_mask_non_string_values ... ok
+test web::control::tests::stop_returns_daemon_not_running_when_socket_missing ... ok
+test web::masking::tests::handles_missing_paths_gracefully ... ok
+test web::masking::tests::masks_memory_auth_token ... ok
+test web::masking::tests::masks_credential_refs ... ok
+test web::masking::tests::masks_multiple_credential_refs ... ok
+test web::masking::tests::masks_provider_api_keys ... ok
+test web::logs::tests::logs_returns_not_found_for_unknown_user ... ok
+test web::masking::tests::masks_web_auth_token ... ok
+test web::middleware::tests::constant_time_eq_detects_equal_and_unequal_values ... ok
+test web::middleware::tests::constant_time_eq_empty_strings_are_equal ... ok
+test web::middleware::tests::constant_time_eq_rejects_different_lengths ... ok
+test web::middleware::tests::constant_time_eq_rejects_prefix_match ... ok
+test web::logs::tests::logs_reject_invalid_stream_query ... ok
+test web::schema::tests::agent_schema_covers_all_agent_config_field_paths ... ok
+test web::config_write::tests::prune_backups_keeps_latest_n ... ok
+test web::schema::tests::agent_schema_has_all_sections ... ok
+test web::logs::tests::logs_fall_back_to_workspace_files ... ok
+test web::onboarding::tests::onboarding_needs_setup_when_fresh ... ok
+test web::schema::tests::agent_sections_have_group_assignments ... ok
+test web::config_write::tests::rename_user_moves_registration_and_file ... ok
+test web::schema::tests::collection_sections_have_metadata ... ok
+test web::onboarding::tests::onboarding_reports_partial_setup ... ok
+test web::schema::tests::dynamic_sources_include_all_enum_sets ... ok
+test web::schema::tests::all_fields_have_labels_and_descriptions ... ok
+test web::schema::tests::auth_modes_match_rust_enum ... ok
+test web::onboarding::tests::onboarding_detects_existing_config ... ok
+test web::schema::tests::dynamic_sources_include_registered_providers ... ok
+test web::schema::tests::memory_and_telegram_schema_defaults_match_runtime_requirements ... ok
+test web::schema::tests::dynamic_sources_include_tool_names ... ok
+test web::schema::tests::dynamic_sources_tool_names_match_canonical ... ok
+test web::schema::tests::nullable_fields_in_runner_guest_images ... ok
+test web::schema::tests::embedding_backends_match_rust_enum ... ok
+test web::schema::tests::nullable_fields_in_providers_advanced_overrides ... ok
+test web::schema::tests::nullable_fields_in_user_behavior ... ok
+test web::schema::tests::nullable_fields_in_user_resources ... ok
+test web::schema::tests::optional_sections_marked_correctly ... ok
+test web::schema::tests::number_fields_with_constraints_have_valid_ranges ... ok
+test web::schema::tests::nullable_fields_present_for_optional_types ... ok
+test web::schema::tests::runner_schema_covers_all_runner_config_field_paths ... ok
+test web::schema::tests::runner_schema_has_all_sections ... ok
+test web::schema::tests::model2vec_models_match_rust_enum ... ok
+test web::schema::tests::provider_types_match_rust_enum ... ok
+test web::schema::tests::schema_omits_empty_optional_fields ... ok
+test web::schema::tests::sandbox_tiers_match_rust_enum ... ok
+test web::schema::tests::user_schema_covers_all_user_config_field_paths ... ok
+test web::schema::tests::select_fields_have_enum_options_or_dynamic_source ... ok
+test web::state::tests::host_matching_is_case_insensitive ... ok
+test web::schema::tests::user_schema_has_all_sections ... ok
+test web::state::tests::host_matching_trims_whitespace ... ok
+test web::state::tests::loopback_bind_accepts_ip_header ... ok
+test web::state::tests::loopback_bind_accepts_localhost_header ... ok
+test web::state::tests::loopback_bind_rejects_arbitrary_hostname ... ok
+test web::state::tests::loopback_bind_rejects_external_ip_header ... ok
+test web::state::tests::wildcard_bind_accepts_external_ip_header ... ok
+test web::state::tests::wildcard_bind_accepts_literal_0000_header ... ok
+test web::state::tests::wildcard_bind_accepts_localhost_header ... ok
+test web::state::tests::wildcard_bind_accepts_local_hostname_alias ... ok
+test web::state::tests::wildcard_bind_accepts_loopback_ip_header ... ok
+test web::state::tests::wildcard_bind_rejects_arbitrary_hostname_header ... ok
+test web::state::tests::wildcard_bind_rejects_wrong_port ... ok
+test web::status::tests::status_shows_daemon_not_running ... ok
+test web::status::tests::status_shows_no_users_when_empty ... ok
+test web::tests::arm_low_power_heuristic_requires_arm_and_small_memory ... ok
+test web::schema::tests::schema_serializes_to_json_without_error ... ok
+test web::status::tests::user_status_returns_not_found_for_unknown ... ok
+test web::schema::tests::schema_endpoint_returns_all_config_types ... ok
+test web::tests::host_validation_rejects_mismatch ... ok
+test web::tests::parse_linux_memtotal_mib_parses_value ... ok
+test web::tests::content_type_layer_rejects_non_json_mutation ... ok
+test web::tests::text_contains_raspberry_pi_detects_marker ... ok
+test web::tests::index_serves_html ... ok
+test web::schema::tests::schema_endpoint_returns_correct_field_metadata ... ok
+test web::tests::unknown_api_path_returns_404_or_fallback ... ok
+test web::tests::meta_endpoint_returns_version ... ok
+test web::tests::auth_layer_blocks_missing_token_and_accepts_valid_token ... ok
+test tests::process_startup_sends_bootstrap_frame_to_runtime_stdin ... ok
+test tests::startup_uses_runner_config_directory_for_host_agent_config_resolution ... ok
+test bootstrap::tests::bootstrap_rejects_unknown_provider_in_agent_selection ... ok
+test bootstrap::tests::bootstrap_vm_runtime_with_process_tier_frame_disables_sidecar_tools ... ok
+test bootstrap::tests::bootstrap_vm_runtime_with_sidecar_metadata_routes_shell_status_through_sidecar_path ... ok
+test bootstrap::tests::bootstrap_vm_runtime_without_frame_disables_sidecar_tools_for_direct_execution ... ok
+test bootstrap::tests::bootstrap_rejects_unknown_model_in_agent_selection ... ok
+
+test result: ok. 290 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+
+     Running unittests src/bin/oxydra-vm.rs (target/debug/deps/oxydra_vm-8259e88caab9515a)
+
+running 6 tests
+test tests::bootstrap_frame_reader_preserves_length_prefixed_payload ... ok
+test tests::bootstrap_frame_from_file_wraps_with_length_prefix ... ok
+test tests::vm_args_accept_bootstrap_stdin_flag ... ok
+test tests::vm_args_parse_required_fields ... ok
+test tests::vm_args_accept_bootstrap_file_flag ... ok
+test tests::marker_writer_persists_gateway_endpoint ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/runner-c9767b330531e93e)
+
+running 33 tests
+test tests::image_tag_mismatch_warning_mentions_fix_path ... ok
+test tests::parse_cli_args_accepts_probe_without_tui ... ok
+test tests::parse_cli_args_accepts_restart_subcommand ... ok
+test tests::parse_cli_args_accepts_env_flags ... ok
+test tests::parse_cli_args_accepts_catalog_fetch_subcommand ... ok
+test tests::parse_cli_args_accepts_logs_subcommand_with_defaults ... ok
+test tests::parse_cli_args_accepts_start_subcommand ... ok
+test tests::parse_cli_args_accepts_check_update_subcommand ... ok
+test tests::parse_cli_args_accepts_logs_with_user_flag ... ok
+test tests::parse_cli_args_accepts_catalog_verify_subcommand ... ok
+test tests::parse_cli_args_accepts_daemon_flag ... ok
+test tests::parse_cli_args_accepts_catalog_show_subcommand ... ok
+test tests::parse_cli_args_accepts_catalog_fetch_with_pinned ... ok
+test tests::parse_cli_args_accepts_check_update_with_pre_release ... ok
+test tests::parse_cli_args_accepts_logs_with_all_flags ... ok
+test tests::parse_cli_args_accepts_status_subcommand ... ok
+test tests::parse_cli_args_accepts_stop_subcommand ... ok
+test tests::parse_cli_args_accepts_tui_and_user_flags ... ok
+test tests::parse_cli_args_accepts_tui_with_probe_flag ... ok
+test tests::parse_cli_args_defaults_to_start_mode ... ok
+test tests::parse_cli_args_rejects_missing_flag_value ... ok
+test tests::parse_extra_env_vars_allows_empty_value ... ok
+test tests::parse_extra_env_vars_allows_value_with_equals ... ok
+test tests::parse_cli_args_start_with_env_flags ... ok
+test tests::parse_cli_args_without_subcommand_has_no_command ... ok
+test tests::parse_extra_env_vars_from_cli_only ... ok
+test tests::parse_cli_args_stop_with_user_flag ... ok
+test tests::parse_extra_env_vars_rejects_missing_equals ... ok
+test tests::server_not_running_error_mentions_user_id_and_hint ... ok
+test tests::tui_binary_not_found_error_message_includes_install_hint ... ok
+test tests::which_tui_binary_returns_error_when_not_in_path ... ok
+test tests::parse_extra_env_vars_cli_overrides_file ... ok
+test tests::parse_extra_env_vars_from_file ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/startup_integration.rs (target/debug/deps/startup_integration-fbe4b2f5369c4192)
+
+running 2 tests
+test runner_process_mode_reports_explicit_degraded_warning ... ok
+test runner_provisions_workspace_layout_on_first_start ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/web_integration.rs (target/debug/deps/web_integration-c9b73e5cbdc1b631)
+
+running 20 tests
+test host_validation_rejects_wrong_host ... ok
+test content_type_enforcement_blocks_non_json_mutation ... ok
+test logs_returns_404_for_unregistered_user ... ok
+test control_stop_returns_conflict_when_not_running ... ok
+test config_runner_returns_config_with_masked_secrets ... ok
+test control_start_returns_404_for_unregistered_user ... ok
+test config_agent_returns_defaults_when_missing ... ok
+test onboarding_reports_needs_setup_on_fresh_install ... ok
+test host_validation_accepts_localhost_alias ... ok
+test meta_returns_version_and_paths ... ok
+test root_serves_html ... ok
+test auth_blocks_unauthenticated_when_enabled ... ok
+test logs_returns_entries_from_workspace_files ... ok
+test status_returns_empty_users_for_fresh_config ... ok
+test status_per_user_returns_not_found_for_unknown ... ok
+test validate_runner_config_returns_422_for_invalid_patch ... ok
+test status_shows_registered_user_as_stopped ... ok
+test config_runner_patch_then_read_roundtrip ... ok
+test config_agent_patch_creates_file_and_reads_back ... ok
+test full_user_lifecycle ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (target/debug/deps/runtime-af56ec59110aacd6)
+
+running 118 tests
+test scrubbing::tests::path_scrubbing_is_noop_for_empty_mappings ... ok
+test delegation::tests::delegation_selection_for_default_agent_always_uses_root ... ok
+test delegation::tests::delegation_selection_uses_agent_override_when_present ... ok
+test delegation::tests::delegation_selection_inherits_caller_when_agent_has_no_override ... ok
+test scrubbing::tests::path_scrubbing_is_noop_for_empty_output ... ok
+test scrubbing::tests::path_scrubbing_replaces_host_paths_with_virtual_paths ... ok
+test scrubbing::tests::path_scrubbing_applies_longest_match_first ... ok
+test scrubbing::tests::translate_preserves_already_host_paths ... ok
+test scrubbing::tests::translate_file_list_virtual_root_directory ... ok
+test scrubbing::tests::translate_file_list_defaults_missing_path_to_shared ... ok
+test scrubbing::tests::translate_respects_path_boundary ... ok
+test scrubbing::tests::translate_send_media_virtual_path_to_host_path ... ok
+test scrubbing::tests::translate_ignores_unknown_tool_names ... ok
+test scrubbing::tests::translate_file_read_virtual_path_to_host_path ... ok
+test scrubbing::tests::translate_shell_exec_passes_through_unchanged ... ok
+test scrubbing::tests::translate_skips_empty_virtual_path_mappings ... ok
+test scrubbing::tests::translate_vault_copyto_both_paths ... ok
+test tests::context_budget_breakdown_total_tokens ... ok
+test tests::concatenated_arguments_are_fanned_out_as_parallel_tool_calls ... ok
+test tests::compose_rolling_summary_with_previous ... ok
+test tests::compose_rolling_summary_without_previous ... ok
+test tests::compose_rolling_summary_truncates_at_4000_chars ... ok
+test tests::enforce_cost_budget_accumulates_across_calls ... ok
+test tests::enforce_cost_budget_passes_when_no_limit ... ok
+test tests::enforce_cost_budget_exceeds_limit ... ok
+test tests::delegation_depth_spike_session_id_chaining ... ok
+test tests::is_obviously_within_budget_returns_false_when_buffer_equals_max ... ok
+test tests::is_obviously_within_budget_returns_false_with_attachments ... ok
+test tests::is_obviously_within_budget_returns_true_for_small_context ... ok
+test tests::is_summarized_sequence_with_no_summary_state ... ok
+test tests::is_summarized_sequence_boundary ... ok
+test tests::delegation_depth_spike_max_depth_observation ... ok
+test tests::latest_retrieval_query_falls_back_to_any_message ... ok
+test tests::latest_retrieval_query_returns_latest_user_message ... ok
+test tests::latest_retrieval_query_returns_none_for_empty_context ... ok
+test tests::latest_retrieval_query_skips_empty_content ... ok
+test tests::merge_usage_from_none_existing ... ok
+test tests::merge_usage_replaces_present_fields ... ok
+test tests::run_session_cancels_before_provider_call ... ok
+test tests::restore_session_hydrates_context_when_memory_is_configured ... ok
+test tests::run_session_errors_when_max_cost_budget_is_exceeded ... ok
+test tests::delegation_depth_spike_three_levels ... FAILED
+test scrubbing::tests::scrubber_preserves_non_sensitive_normal_output ... ok
+test scrubbing::tests::scrubber_preserves_filesystem_paths ... ok
+test scrubbing::tests::scrubber_still_redacts_actual_secrets_that_look_like_note_ids ... ok
+test scrubbing::tests::scrubber_redacts_non_path_high_entropy_tokens_still ... ok
+test scrubbing::tests::scrubber_redacts_high_entropy_candidates_without_keywords ... ok
+test scrubbing::tests::scrubber_preserves_memory_note_ids ... ok
+test tests::run_session_falls_back_to_complete_after_stream_failure ... ok
+test tests::run_session_exposes_registered_tools_to_provider_context ... ok
+test tests::run_session_for_session_keeps_existing_behavior_without_memory_backend ... ok
+test tests::run_session_for_session_persists_initial_context_and_new_turns ... ok
+test tests::run_session_errors_when_provider_stage_times_out ... ok
+test tests::run_session_errors_when_stream_stage_times_out ... ok
+test scrubbing::tests::scrubber_redacts_keyword_value_pairs ... ok
+test tests::run_session_errors_when_max_turn_budget_is_exceeded ... ok
+test tests::run_session_for_session_scrubs_media_event_paths_before_forwarding ... ok
+test tests::run_session_for_session_with_stream_events_forwards_provider_deltas ... ok
+test tests::run_session_for_session_with_tool_context_propagates_user_context_to_tools ... ok
+test tests::run_session_injects_tool_timeout_error_when_tool_stage_times_out ... ok
+test tests::run_session_cancels_during_provider_call ... ok
+test tests::run_session_omits_tool_schemas_when_model_does_not_support_tools ... ok
+test tests::run_session_reconstructs_streamed_tool_calls_and_loops_until_done ... ok
+test tests::delegation_depth_spike_cancellation_propagation ... ok
+test tests::run_session_recovers_from_malformed_streamed_json_arguments ... ok
+test tests::run_session_recovers_from_validation_error ... ok
+test tests::run_session_rejects_invalid_guard_preconditions ... ok
+test tests::run_session_rejects_unconfigured_selection_route ... ok
+test tests::run_session_supports_mockall_provider_single_turn_without_tools ... ok
+test tests::run_session_scrubs_credential_like_tool_output_before_context_injection ... ok
+test tests::run_session_uses_complete_path_when_streaming_is_disabled ... ok
+test tests::run_session_supports_mockall_tool_execution ... ok
+test tests::run_session_uses_registered_selection_provider_route ... ok
+test tests::runtime_limits_can_store_optional_max_cost_guard ... ok
+test tests::runtime_limits_default_matches_turn_guard_baseline ... ok
+test tests::scheduler_executor_tests::executor_conditional_notification_with_notify_marker ... ok
+test tests::scheduler_executor_tests::executor_conditional_notification_without_marker_is_silent ... ok
+test tests::scheduler_executor_tests::executor_empty_tick_does_nothing ... ok
+test tests::scheduler_executor_tests::executor_handles_failed_turn ... ok
+test tests::scheduler_executor_tests::executor_never_notification_is_silent ... ok
+test tests::scheduler_executor_tests::executor_one_shot_completes_after_success ... ok
+test tests::scheduler_executor_tests::executor_tick_dispatches_due_schedule ... ok
+test tests::run_session_executes_readonly_tools_in_parallel ... ok
+test tests::select_messages_within_budget_returns_empty_when_budget_exhausted ... ok
+test tests::run_session_for_session_strips_attachment_bytes_before_persisting ... ok
+test tests::select_messages_within_budget_drops_oldest_first ... ok
+test tests::select_messages_within_budget_selects_from_end ... ok
+test tests::sequence_from_index_maps_correctly ... ok
+test tests::streamed_tool_calls_accept_empty_argument_payload_as_object ... ok
+test tests::streamed_tool_calls_require_function_name ... ok
+test tests::streamed_tool_calls_require_id_field ... ok
+test tests::summary_message_content_with_no_content_no_tool_calls ... ok
+test tests::summary_message_content_truncates_long_content ... ok
+test tests::summary_message_content_with_tool_calls_only ... ok
+test tests::try_extract_concatenated_json_objects_ignores_trailing_whitespace ... ok
+test tests::try_extract_concatenated_json_objects_returns_all_objects ... ok
+test tests::try_extract_concatenated_json_objects_returns_none_for_non_object_input ... ok
+test tests::run_session_for_session_injects_retrieved_memory_snippets ... ok
+test tests::try_extract_concatenated_json_objects_returns_none_for_single_with_trailing_junk ... ok
+test tests::try_extract_concatenated_json_objects_returns_none_for_valid_single_object ... ok
+test tests::usage_to_cost_aggregates_prompt_and_completion_when_no_total ... ok
+test tests::usage_to_cost_returns_none_when_all_none ... ok
+test tests::usage_to_cost_returns_none_when_prompt_and_completion_both_zero ... ok
+test tests::usage_to_cost_uses_total_tokens_when_present ... ok
+test tests::validate_guard_preconditions_rejects_non_positive_max_cost ... ok
+test tests::validate_guard_preconditions_accepts_valid_limits ... ok
+test tests::validate_guard_preconditions_rejects_zero_max_turns ... ok
+test tests::validate_guard_preconditions_rejects_zero_timeout ... ok
+test tests::run_session_uses_fallback_context_limit_when_model_cap_is_missing ... ok
+test tests::run_session_trims_provider_context_to_max_context_budget ... ok
+test tests::run_session_for_session_enforces_budget_with_retrieval_injection ... ok
+test tests::run_session_for_session_triggers_rolling_summary_when_threshold_exceeded ... ok
+test tests::run_session_for_session_discards_stale_rolling_summary_writes ... ok
+test tests::run_session_injects_unknown_tool_error_for_legacy_alias_after_cutover ... ok
+test tests::run_session_emits_explicit_shell_disabled_error_when_sidecar_is_unavailable ... ok
+test tests::run_session_injects_security_policy_denial_for_out_of_workspace_file_access ... ok
+test tests::run_session_executes_bash_via_bootstrap_sidecar_backend ... ok
+test tests::run_session_budget_exceeded_when_latest_user_message_does_not_fit ... ok
+
+failures:
+
+---- tests::delegation_depth_spike_three_levels stdout ----
+
+thread 'tests::delegation_depth_spike_three_levels' (3693111) panicked at crates/runtime/src/tests.rs:103:14:
+test provider expected another scripted step
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::delegation_depth_spike_three_levels
+
+test result: FAILED. 117 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.79s
+
+error: test failed, to rerun pass `-p runtime --lib`
