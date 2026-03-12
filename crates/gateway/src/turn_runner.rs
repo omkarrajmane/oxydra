@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use super::*;
 use runtime::ScheduledTurnRunner;
-use types::{AgentDefinition, ChannelCapabilities, InlineMedia, ProviderSelection};
+use types::{AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, InlineMedia, ProviderSelection, RunPolicyInput};
+use runtime::policy_guard::{PolicyValidationError, resolve_policy};
 
 /// User-submitted content for a single turn (text + optional media).
 pub struct UserTurnInput {
@@ -36,15 +37,22 @@ pub trait GatewayTurnRunner: Send + Sync {
     ) -> Result<Response, RuntimeError>;
 
     async fn drop_session_context(&self, session_id: &str);
+
+    /// Resolve the effective runtime policy for a session admission.
+    fn resolve_session_policy(
+        &self,
+        agent_name: &str,
+        per_run: &RunPolicyInput,
+    ) -> Result<EffectiveRunPolicy, PolicyValidationError>;
 }
 
 pub struct RuntimeGatewayTurnRunner {
     runtime: Arc<AgentRuntime>,
     default_selection: ProviderSelection,
     agent_selections: BTreeMap<String, ProviderSelection>,
+    agent_definitions: BTreeMap<String, AgentDefinition>,
     contexts: Mutex<HashMap<String, Context>>,
 }
-
 impl RuntimeGatewayTurnRunner {
     pub fn new(
         runtime: Arc<AgentRuntime>,
@@ -52,18 +60,21 @@ impl RuntimeGatewayTurnRunner {
         agents: BTreeMap<String, AgentDefinition>,
     ) -> Self {
         let mut agent_selections = BTreeMap::new();
+        let mut agent_definitions = BTreeMap::new();
         for (agent_name, definition) in agents {
             if agent_name == "default" {
                 continue;
             }
-            if let Some(selection) = definition.selection {
-                agent_selections.insert(agent_name, selection);
+            if let Some(selection) = definition.selection.clone() {
+                agent_selections.insert(agent_name.clone(), selection);
             }
+            agent_definitions.insert(agent_name, definition);
         }
         Self {
             runtime,
             default_selection,
             agent_selections,
+            agent_definitions,
             contexts: Mutex::new(HashMap::new()),
         }
     }
@@ -197,6 +208,7 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
             channel_id,
             channel_context_id,
             inbound_attachments,
+            ..Default::default()
         };
 
         // Strip attachment bytes from older user messages to prevent unbounded
@@ -274,6 +286,41 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
 
     async fn drop_session_context(&self, session_id: &str) {
         self.contexts.lock().await.remove(session_id);
+    }
+
+    fn resolve_session_policy(
+        &self,
+        agent_name: &str,
+        per_run: &RunPolicyInput,
+    ) -> Result<EffectiveRunPolicy, PolicyValidationError> {
+        // Build RuntimeConfig from runtime limits
+        let limits = self.runtime.limits();
+        let global_config = types::RuntimeConfig {
+            turn_timeout_secs: limits.turn_timeout.as_secs(),
+            max_turns: limits.max_turns,
+            max_cost: limits.max_cost,
+            context_budget: Default::default(),
+            summarization: Default::default(),
+        };
+
+        // Get agent definition (or use empty one if not found)
+        let agent_def = self.agent_definitions
+            .get(agent_name)
+            .cloned()
+            .unwrap_or_else(|| types::AgentDefinition {
+                system_prompt: None,
+                system_prompt_file: None,
+                selection: None,
+                tools: None,
+                max_turns: None,
+                max_cost: None,
+            });
+
+        // Get available tools from runtime
+        let available_tools = self.runtime.tool_schemas();
+
+        // Call the policy resolution function
+        resolve_policy(&global_config, &agent_def, per_run, &available_tools)
     }
 }
 

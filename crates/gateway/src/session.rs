@@ -9,7 +9,7 @@ use std::{
 
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, broadcast};
 use tokio_util::sync::CancellationToken;
-use types::{GatewayServerFrame, GatewaySession, GatewayTurnState, GatewayTurnStatus};
+use types::{EffectiveRunPolicy, GatewayServerFrame, GatewaySession, GatewayTurnState, GatewayTurnStatus};
 
 use crate::EVENT_BUFFER_CAPACITY;
 
@@ -97,6 +97,8 @@ pub struct SessionState {
     pub(crate) active_turn: Mutex<Option<ActiveTurnState>>,
     pub(crate) latest_terminal_frame: Mutex<Option<GatewayServerFrame>>,
     last_activity_epoch_secs: AtomicU64,
+    /// The effective runtime policy for this session, resolved at admission time.
+    pub(crate) effective_policy: Mutex<Option<EffectiveRunPolicy>>,
 }
 
 impl SessionState {
@@ -119,7 +121,20 @@ impl SessionState {
             active_turn: Mutex::new(None),
             latest_terminal_frame: Mutex::new(None),
             last_activity_epoch_secs: AtomicU64::new(epoch_now_secs()),
+            effective_policy: Mutex::new(None),
         }
+    }
+
+    /// Set the effective runtime policy for this session.
+    /// This should be called during session admission after policy resolution.
+    pub(crate) async fn set_effective_policy(&self, policy: EffectiveRunPolicy) {
+        let mut guard = self.effective_policy.lock().await;
+        *guard = Some(policy);
+    }
+
+    /// Get the effective runtime policy for this session, if set.
+    pub(crate) async fn get_effective_policy(&self) -> Option<EffectiveRunPolicy> {
+        self.effective_policy.lock().await.clone()
     }
 
     pub(crate) fn gateway_session(&self) -> GatewaySession {

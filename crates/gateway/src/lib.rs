@@ -41,7 +41,7 @@ mod tests;
 use runtime::SchedulerNotifier;
 pub use session::SessionState as GatewaySessionState;
 use session::{ActiveTurnState, SessionState, UserState};
-pub use turn_runner::{GatewayTurnRunner, RuntimeGatewayTurnRunner, TurnOrigin};
+pub use turn_runner::{GatewayTurnRunner, RuntimeGatewayTurnRunner, TurnOrigin, UserTurnInput};
 
 const WS_ROUTE: &str = "/ws";
 const GATEWAY_CHANNEL_ID: &str = "tui";
