@@ -5,11 +5,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tools::ToolRegistry;
 use types::{
-    Context, Memory, MemoryError, MemoryHybridQueryRequest, MemoryRecallRequest, MemoryRetrieval,
-    MemoryStoreRequest, MemorySummaryReadRequest, MemorySummaryState, MemorySummaryWriteRequest,
-    Message, MessageRole, Provider, ProviderError, ProviderId, ProviderSelection, Response,
-    RuntimeError, RuntimeProgressEvent, RuntimeProgressKind, SafetyTier, StreamItem, ToolCall,
-    ToolCallDelta, ToolError, ToolExecutionContext, UsageUpdate,
+    Context, EffectiveRunPolicy, Memory, MemoryError, MemoryHybridQueryRequest, MemoryRecallRequest,
+    MemoryRetrieval, MemoryStoreRequest, MemorySummaryReadRequest, MemorySummaryState,
+    MemorySummaryWriteRequest, Message, MessageRole, Provider, ProviderError, ProviderId,
+    ProviderSelection, Response, RuntimeError, RuntimeProgressEvent, RuntimeProgressKind,
+    SafetyTier, StreamItem, ToolCall, ToolCallDelta, ToolError, ToolExecutionContext,
+    UsageUpdate,
 };
 
 const DEFAULT_STREAM_BUFFER_SIZE: usize = 64;
@@ -48,10 +49,12 @@ mod provider_response;
 mod scheduler_executor;
 mod scrubbing;
 mod tool_execution;
+pub mod policy_guard;
 
 pub use delegation::RuntimeDelegationExecutor;
 pub use scheduler_executor::{SchedulerExecutor, SchedulerNotifier};
 pub use scrubbing::PathScrubMapping;
+pub use policy_guard::{resolve_policy, PolicyValidationError};
 
 /// Trait that the gateway layer implements so the scheduler executor can
 /// trigger agent turns without depending on the gateway crate directly.
@@ -142,6 +145,7 @@ pub struct AgentRuntime {
     memory_retrieval: Option<Arc<dyn MemoryRetrieval>>,
     path_scrub_mappings: Vec<PathScrubMapping>,
     system_prompt: Option<String>,
+    permission_handler: Option<Arc<dyn types::policy::ToolPermissionHandler>>,
 }
 
 impl AgentRuntime {
@@ -162,6 +166,7 @@ impl AgentRuntime {
             memory_retrieval: None,
             path_scrub_mappings: Vec::new(),
             system_prompt: None,
+            permission_handler: None,
         }
     }
 
@@ -258,6 +263,11 @@ impl AgentRuntime {
         &self.limits
     }
 
+    /// Returns the tool registry schemas for policy resolution.
+    pub fn tool_schemas(&self) -> Vec<types::FunctionDecl> {
+        self.tool_registry.schemas()
+    }
+
     pub async fn run_session(
         &self,
         context: &mut Context,
@@ -269,6 +279,7 @@ impl AgentRuntime {
             cancellation,
             None,
             &ToolExecutionContext::default(),
+            None,
         )
         .await
     }
@@ -289,6 +300,7 @@ impl AgentRuntime {
             channel_id: None,
             channel_context_id: None,
             inbound_attachments: None,
+            ..Default::default()
         };
         self.run_session_for_session_with_tool_context(
             session_id,
@@ -306,7 +318,7 @@ impl AgentRuntime {
         cancellation: &CancellationToken,
         tool_context: &ToolExecutionContext,
     ) -> Result<Response, RuntimeError> {
-        self.run_session_internal(Some(session_id), context, cancellation, None, tool_context)
+        self.run_session_internal(Some(session_id), context, cancellation, None, tool_context, None)
             .await
     }
 
@@ -324,6 +336,7 @@ impl AgentRuntime {
             cancellation,
             Some(stream_events),
             tool_context,
+            None,
         )
         .await
     }
@@ -367,9 +380,15 @@ impl AgentRuntime {
         cancellation: &CancellationToken,
         stream_events: Option<RuntimeStreamEventSender>,
         tool_context: &ToolExecutionContext,
+        policy: Option<EffectiveRunPolicy>,
     ) -> Result<Response, RuntimeError> {
         if context.tools.is_empty() {
-            context.tools = self.tool_registry.schemas();
+            if let Some(ref p) = policy {
+                let allowed: std::collections::HashSet<String> = p.toolset.iter().map(|t| t.name.clone()).collect();
+                context.tools = self.tool_registry.filtered_schemas(Some(&allowed), &p.disallowed_tools);
+            } else {
+                context.tools = self.tool_registry.schemas();
+            }
         }
 
         // Inject the system prompt if one is configured and the context does
@@ -426,7 +445,10 @@ impl AgentRuntime {
             .await?;
         self.validate_guard_preconditions()?;
         let mut turn = 0usize;
-        let mut accumulated_cost = 0.0;
+        let mut accumulated_cost = 0.0f64;
+
+        // Track policy state if a policy is provided
+        let mut remaining_budget_microusd = policy.as_ref().map(|p| p.remaining_budget_microusd);
 
         loop {
             if cancellation.is_cancelled() {
@@ -434,10 +456,32 @@ impl AgentRuntime {
                 tracing::debug!(?state, "run_session cancelled before provider call");
                 return Err(RuntimeError::Cancelled);
             }
-            if turn >= self.limits.max_turns {
+
+            // Check turn limit - use policy max_turns if available, otherwise use RuntimeLimits
+            let max_turns = policy
+                .as_ref()
+                .and_then(|p| p.max_turns)
+                .map(|m| m as usize)
+                .unwrap_or(self.limits.max_turns);
+            if turn >= max_turns {
                 return Err(RuntimeError::BudgetExceeded);
             }
             turn += 1;
+            // Deadline check before provider call
+            if let Some(ref p) = policy
+                && let Some(deadline) = p.deadline
+            {
+                let now = chrono::Utc::now();
+                if now >= deadline {
+                    tracing::warn!(
+                        turn,
+                        deadline = %deadline,
+                        now = %now,
+                        "deadline exceeded before provider call"
+                    );
+                    return Err(RuntimeError::BudgetExceeded);
+                }
+            }
 
             let state = TurnState::Streaming;
             tracing::debug!(turn, ?state, "running provider turn");
@@ -472,7 +516,71 @@ impl AgentRuntime {
                 assistant_message.tool_calls.clone()
             };
             assistant_message.tool_calls = tool_calls.clone();
-            self.enforce_cost_budget(usage.as_ref(), &mut accumulated_cost)?;
+
+            // Cost settlement and budget check
+            if let Some(ref _p) = policy {
+                // Calculate turn cost from usage (in micro-USD)
+                let turn_cost_microusd = usage
+                    .as_ref()
+                    .and_then(|u| {
+                        let total_tokens = u.total_tokens.or_else(|| {
+                            let prompt = u.prompt_tokens.unwrap_or(0);
+                            let completion = u.completion_tokens.unwrap_or(0);
+                            let aggregated = prompt.saturating_add(completion);
+                            (aggregated > 0).then_some(aggregated)
+                        })?;
+                        // Convert tokens to micro-USD (simple approximation: 1 token = 1 micro-USD)
+                        Some(total_tokens)
+                    })
+                    .unwrap_or(0);
+
+                // Update remaining budget
+                if let Some(ref mut remaining) = remaining_budget_microusd {
+                    // Bounded overrun: allow the turn to complete even if budget is exceeded,
+                    // but record the overrun. The turn that exceeds the budget is allowed
+                    // to finish, but subsequent turns are blocked.
+                    if *remaining > turn_cost_microusd {
+                        *remaining -= turn_cost_microusd;
+                    } else {
+                        // Budget exceeded - this turn is allowed to complete (bounded overrun)
+                        // but we mark the budget as exhausted for future turns
+                        tracing::warn!(
+                            turn,
+                            remaining_budget = *remaining,
+                            turn_cost = turn_cost_microusd,
+                            "budget exceeded - allowing bounded overrun for this turn"
+                        );
+                        *remaining = 0;
+                    }
+                }
+
+                // Check if budget is exhausted (remaining == 0 means we've exceeded)
+                if remaining_budget_microusd == Some(0) {
+                    tracing::warn!(
+                        turn,
+                        "max budget exceeded - stopping after this turn"
+                    );
+                    // Return the response since this turn was allowed to complete
+                    // but indicate budget was exceeded
+                    context.messages.push(assistant_message.clone());
+                    self.persist_message_if_needed(
+                        session_id,
+                        &mut next_memory_sequence,
+                        &assistant_message,
+                    )
+                    .await?;
+                    return Ok(Response {
+                        message: assistant_message,
+                        tool_calls,
+                        finish_reason,
+                        usage,
+                    });
+                }
+            } else {
+                // No policy - use existing RuntimeLimits cost budget check
+                self.enforce_cost_budget(usage.as_ref(), &mut accumulated_cost)?;
+            }
+
             context.messages.push(assistant_message.clone());
             self.persist_message_if_needed(
                 session_id,
@@ -627,7 +735,6 @@ enum StreamCollectError {
     Cancelled,
     TurnTimedOut,
 }
-
 /// When the LLM stuffs multiple JSON objects into a single tool-call arguments
 /// string (e.g. `{"query":"a"}{"query":"b"}`), `serde_json::from_str` rejects
 /// the concatenation with a "trailing characters" error.
