@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! SDK Events module
 //!
 //! Event types and streaming interfaces for the SDK.
@@ -74,6 +76,13 @@ pub enum RunEvent {
         /// Remaining budget in micro-USD (if applicable).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         remaining_budget: Option<u64>,
+    },
+    /// Budget warning (e.g., 80% or 95% of budget used).
+    BudgetWarning {
+        /// Remaining budget in micro-USD.
+        remaining: u64,
+        /// The threshold percentage that was crossed (e.g., 80, 95).
+        threshold_pct: u8,
     },
     /// Policy stopped the run (e.g., max turns exceeded).
     PolicyStop {

@@ -1,0 +1,318 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Checking runtime v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/runtime)
+error: unused import: `StopReason`
+    --> crates/runtime/src/tests.rs:4575:50
+     |
+4575 |     use types::{EffectiveRunPolicy, RolloutMode, StopReason};
+     |                                                  ^^^^^^^^^^
+     |
+     = note: `-D unused-imports` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5178:5
+     |
+5178 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+     |
+     = note: `-D unnameable-test-items` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(unnameable_test_items)]`
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5239:5
+     |
+5239 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+error: unused import: `sleep`
+    --> crates/runtime/src/tests.rs:5243:37
+     |
+5243 |         use tokio::time::{Duration, sleep};
+     |                                     ^^^^^
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5313:5
+     |
+5313 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+error: unused import: `std::collections::BTreeMap`
+    --> crates/runtime/src/tests.rs:5317:13
+     |
+5317 |         use std::collections::BTreeMap;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unused imports: `DelegationRequest`, `EffectiveRunPolicy`, and `RolloutMode`
+    --> crates/runtime/src/tests.rs:5318:21
+     |
+5318 |         use types::{DelegationRequest, EffectiveRunPolicy, RolloutMode};
+     |                     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5333:5
+     |
+5333 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5343:5
+     |
+5343 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5352:5
+     |
+5352 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+error: cannot test inner items
+    --> crates/runtime/src/tests.rs:5409:5
+     |
+5409 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+error: this `map_or` can be simplified
+  --> crates/runtime/src/delegation.rs:81:13
+   |
+81 | /             narrowed_tool_names
+82 | |                 .as_ref()
+83 | |                 .map_or(false, |allowed| allowed.contains(&t.name))
+   | |___________________________________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_map_or
+   = note: `-D clippy::unnecessary-map-or` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::unnecessary_map_or)]`
+help: use is_some_and instead
+   |
+83 -                 .map_or(false, |allowed| allowed.contains(&t.name))
+83 +                 .is_some_and(|allowed| allowed.contains(&t.name))
+   |
+
+error: unnecessary closure used to substitute value for `Option::None`
+   --> crates/runtime/src/scheduler_executor.rs:388:34
+    |
+388 |               max_budget_microusd: per_run.max_budget_microusd.or_else(|| {
+    |  __________________________________^
+389 | |                 if self.config.max_cost > 0.0 {
+390 | |                     Some((self.config.max_cost * 1_000_000.0) as u64)
+391 | |                 } else {
+...   |
+394 | |             }),
+    | |______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_lazy_evaluations
+    = note: `-D clippy::unnecessary-lazy-evaluations` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unnecessary_lazy_evaluations)]`
+help: use `or` instead
+    |
+388 ~             max_budget_microusd: per_run.max_budget_microusd.or({
+389 +                 if self.config.max_cost > 0.0 {
+390 +                     Some((self.config.max_cost * 1_000_000.0) as u64)
+391 +                 } else {
+392 +                     None
+393 +                 }
+394 ~             }),
+    |
+
+error: this `map_or` can be simplified
+   --> crates/runtime/src/lib.rs:516:36
+    |
+516 |                   let should_block = policy
+    |  ____________________________________^
+517 | |                     .as_ref()
+518 | |                     .map_or(true, |p| matches!(p.rollout_mode, RolloutMode::Enforce));
+    | |_____________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_map_or
+help: use is_none_or instead
+    |
+518 -                     .map_or(true, |p| matches!(p.rollout_mode, RolloutMode::Enforce));
+518 +                     .is_none_or(|p| matches!(p.rollout_mode, RolloutMode::Enforce));
+    |
+
+error: this `map_or` can be simplified
+   --> crates/runtime/src/lib.rs:725:40
+    |
+725 |                       let should_block = policy
+    |  ________________________________________^
+726 | |                         .as_ref()
+727 | |                         .map_or(true, |p| matches!(p.rollout_mode, RolloutMode::Enforce));
+    | |_________________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#unnecessary_map_or
+help: use is_none_or instead
+    |
+727 -                         .map_or(true, |p| matches!(p.rollout_mode, RolloutMode::Enforce));
+727 +                         .is_none_or(|p| matches!(p.rollout_mode, RolloutMode::Enforce));
+    |
+
+error: could not compile `runtime` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: unused variable: `progress_sender`
+    --> crates/runtime/src/tests.rs:4195:9
+     |
+4195 |         progress_sender: Option<types::DelegationProgressSender>,
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_sender`
+     |
+     = note: `-D unused-variables` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(unused_variables)]`
+
+error: unused variable: `parent_cancellation`
+    --> crates/runtime/src/tests.rs:4194:9
+     |
+4194 |         parent_cancellation: &CancellationToken,
+     |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent_cancellation`
+
+error: variable does not need to be mutable
+    --> crates/runtime/src/tests.rs:4431:9
+     |
+4431 |     let mut context = Context {
+     |         ----^^^^^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `-D unused-mut` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(unused_mut)]`
+
+error: unused variable: `result`
+    --> crates/runtime/src/tests.rs:5296:13
+     |
+5296 |         let result = runtime
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+error: field `inner` is never read
+    --> crates/runtime/src/tests.rs:4150:5
+     |
+4148 | struct RecordingDelegationExecutor {
+     |        --------------------------- field in this struct
+4149 |     records: Arc<Mutex<Vec<DelegationRecord>>>,
+4150 |     inner: RuntimeDelegationExecutor,
+     |     ^^^^^
+     |
+     = note: `-D dead-code` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: fields `parent_user_id` and `goal` are never read
+    --> crates/runtime/src/tests.rs:4156:5
+     |
+4154 | struct DelegationRecord {
+     |        ---------------- fields in this struct
+4155 |     parent_session_id: String,
+4156 |     parent_user_id: String,
+     |     ^^^^^^^^^^^^^^
+4157 |     agent_name: String,
+4158 |     goal: String,
+     |     ^^^^
+     |
+     = note: `DelegationRecord` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+error: function `edge_case_bounded_overrun_completes_current_call` is never used
+    --> crates/runtime/src/tests.rs:5179:14
+     |
+5179 |     async fn edge_case_bounded_overrun_completes_current_call() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `edge_case_cancellation_takes_precedence_over_policy` is never used
+    --> crates/runtime/src/tests.rs:5240:14
+     |
+5240 |     async fn edge_case_cancellation_takes_precedence_over_policy() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `edge_case_depth_exceeds_five_rejected_at_delegation` is never used
+    --> crates/runtime/src/tests.rs:5314:14
+     |
+5314 |     async fn edge_case_depth_exceeds_five_rejected_at_delegation() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `edge_case_depth_exactly_five_allowed` is never used
+    --> crates/runtime/src/tests.rs:5334:14
+     |
+5334 |     async fn edge_case_depth_exactly_five_allowed() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `edge_case_depth_zero_allowed` is never used
+    --> crates/runtime/src/tests.rs:5344:14
+     |
+5344 |     async fn edge_case_depth_zero_allowed() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `edge_case_budget_exhausted_stops_before_next_turn` is never used
+    --> crates/runtime/src/tests.rs:5353:14
+     |
+5353 |     async fn edge_case_budget_exhausted_stops_before_next_turn() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function `edge_case_deadline_exceeded_stops_execution` is never used
+    --> crates/runtime/src/tests.rs:5410:14
+     |
+5410 |     async fn edge_case_deadline_exceeded_stops_execution() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: manual `RangeInclusive::contains` implementation
+    --> crates/runtime/src/delegation.rs:1056:64
+     |
+1056 |             prop::num::u8::ANY.prop_filter("valid ascii", |&v| v >= 97 && v <= 122),
+     |                                                                ^^^^^^^^^^^^^^^^^^^ help: use: `(97..=122).contains(&v)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#manual_range_contains
+     = note: `-D clippy::manual-range-contains` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::manual_range_contains)]`
+
+error: useless use of `format!`
+    --> crates/runtime/src/tests.rs:4370:45
+     |
+4370 |     assert!(grandchild_session.starts_with(&format!("subagent:subagent:parent_session:")));
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"subagent:subagent:parent_session:".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#useless_format
+     = note: `-D clippy::useless-format` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::useless_format)]`
+
+error: this `if` statement can be collapsed
+    --> crates/runtime/src/tests.rs:4945:9
+     |
+4945 | /         if let StreamItem::PolicyEvent(PolicyStreamEvent::PolicyStop { reason }) = item {
+4946 | |             if matches!(reason, StopReason::MaxTurns) {
+4947 | |                 found_policy_event = true;
+4948 | |                 break;
+4949 | |             }
+4950 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#collapsible_if
+     = note: `-D clippy::collapsible-if` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+     |
+4945 ~         if let StreamItem::PolicyEvent(PolicyStreamEvent::PolicyStop { reason }) = item
+4946 ~             && matches!(reason, StopReason::MaxTurns) {
+4947 |                 found_policy_event = true;
+4948 |                 break;
+4949 ~             }
+     |
+
+error: this `if` statement can be collapsed
+    --> crates/runtime/src/tests.rs:5153:9
+     |
+5153 | /         if let StreamItem::PolicyEvent(PolicyStreamEvent::PolicyStop { reason }) = item {
+5154 | |             if matches!(reason, StopReason::MaxRuntimeExceeded) {
+5155 | |                 found_policy_event = true;
+5156 | |                 break;
+5157 | |             }
+5158 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#collapsible_if
+help: collapse nested if block
+     |
+5153 ~         if let StreamItem::PolicyEvent(PolicyStreamEvent::PolicyStop { reason }) = item
+5154 ~             && matches!(reason, StopReason::MaxRuntimeExceeded) {
+5155 |                 found_policy_event = true;
+5156 |                 break;
+5157 ~             }
+     |
+
+error: could not compile `runtime` (lib test) due to 32 previous errors

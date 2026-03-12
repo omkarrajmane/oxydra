@@ -1,0 +1,199 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Blocking waiting for file lock on artifact directory
+warning: unused import: `StopReason`
+    --> crates/runtime/src/tests.rs:4575:50
+     |
+4575 |     use types::{EffectiveRunPolicy, RolloutMode, StopReason};
+     |                                                  ^^^^^^^^^^
+     |
+     = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5178:5
+     |
+5178 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unnameable_test_items)]` on by default
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5239:5
+     |
+5239 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+warning: unused import: `sleep`
+    --> crates/runtime/src/tests.rs:5243:37
+     |
+5243 |         use tokio::time::{Duration, sleep};
+     |                                     ^^^^^
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5313:5
+     |
+5313 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+    --> crates/runtime/src/tests.rs:5317:13
+     |
+5317 |         use std::collections::BTreeMap;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DelegationRequest`, `EffectiveRunPolicy`, and `RolloutMode`
+    --> crates/runtime/src/tests.rs:5318:21
+     |
+5318 |         use types::{DelegationRequest, EffectiveRunPolicy, RolloutMode};
+     |                     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5333:5
+     |
+5333 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5343:5
+     |
+5343 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5352:5
+     |
+5352 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+warning: cannot test inner items
+    --> crates/runtime/src/tests.rs:5409:5
+     |
+5409 |     #[tokio::test]
+     |     ^^^^^^^^^^^^^^
+
+warning: unused variable: `progress_sender`
+    --> crates/runtime/src/tests.rs:4195:9
+     |
+4195 |         progress_sender: Option<types::DelegationProgressSender>,
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_sender`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `parent_cancellation`
+    --> crates/runtime/src/tests.rs:4194:9
+     |
+4194 |         parent_cancellation: &CancellationToken,
+     |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent_cancellation`
+
+warning: variable does not need to be mutable
+    --> crates/runtime/src/tests.rs:4431:9
+     |
+4431 |     let mut context = Context {
+     |         ----^^^^^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `result`
+    --> crates/runtime/src/tests.rs:5296:13
+     |
+5296 |         let result = runtime
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: field `inner` is never read
+    --> crates/runtime/src/tests.rs:4150:5
+     |
+4148 | struct RecordingDelegationExecutor {
+     |        --------------------------- field in this struct
+4149 |     records: Arc<Mutex<Vec<DelegationRecord>>>,
+4150 |     inner: RuntimeDelegationExecutor,
+     |     ^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `parent_user_id` and `goal` are never read
+    --> crates/runtime/src/tests.rs:4156:5
+     |
+4154 | struct DelegationRecord {
+     |        ---------------- fields in this struct
+4155 |     parent_session_id: String,
+4156 |     parent_user_id: String,
+     |     ^^^^^^^^^^^^^^
+4157 |     agent_name: String,
+4158 |     goal: String,
+     |     ^^^^
+     |
+     = note: `DelegationRecord` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: function `edge_case_bounded_overrun_completes_current_call` is never used
+    --> crates/runtime/src/tests.rs:5179:14
+     |
+5179 |     async fn edge_case_bounded_overrun_completes_current_call() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `edge_case_cancellation_takes_precedence_over_policy` is never used
+    --> crates/runtime/src/tests.rs:5240:14
+     |
+5240 |     async fn edge_case_cancellation_takes_precedence_over_policy() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `edge_case_depth_exceeds_five_rejected_at_delegation` is never used
+    --> crates/runtime/src/tests.rs:5314:14
+     |
+5314 |     async fn edge_case_depth_exceeds_five_rejected_at_delegation() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `edge_case_depth_exactly_five_allowed` is never used
+    --> crates/runtime/src/tests.rs:5334:14
+     |
+5334 |     async fn edge_case_depth_exactly_five_allowed() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `edge_case_depth_zero_allowed` is never used
+    --> crates/runtime/src/tests.rs:5344:14
+     |
+5344 |     async fn edge_case_depth_zero_allowed() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `edge_case_budget_exhausted_stops_before_next_turn` is never used
+    --> crates/runtime/src/tests.rs:5353:14
+     |
+5353 |     async fn edge_case_budget_exhausted_stops_before_next_turn() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `edge_case_deadline_exceeded_stops_execution` is never used
+    --> crates/runtime/src/tests.rs:5410:14
+     |
+5410 |     async fn edge_case_deadline_exceeded_stops_execution() {
+     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `runtime` (lib test) generated 24 warnings (run `cargo fix --lib -p runtime --tests` to apply 8 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.27s
+     Running unittests src/lib.rs (target/debug/deps/runtime-65015a410d13f66a)
+
+running 7 tests
+test tests::scheduler_executor_tests::executor_empty_tick_does_nothing ... ok
+test tests::scheduler_executor_tests::executor_never_notification_is_silent ... ok
+test tests::scheduler_executor_tests::executor_one_shot_completes_after_success ... ok
+test tests::scheduler_executor_tests::executor_conditional_notification_without_marker_is_silent ... ok
+test tests::scheduler_executor_tests::executor_handles_failed_turn ... ok
+test tests::scheduler_executor_tests::executor_conditional_notification_with_notify_marker ... ok
+test tests::scheduler_executor_tests::executor_tick_dispatches_due_schedule ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 182 filtered out; finished in 0.00s
+
+     Running tests/openai_compatible_e2e.rs (target/debug/deps/openai_compatible_e2e-63dd4628075cc3a2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+   Doc-tests runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+all doctests ran in 1.07s; merged doctests compilation took 0.60s

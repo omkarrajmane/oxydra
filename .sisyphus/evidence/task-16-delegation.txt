@@ -1,0 +1,96 @@
+Task 16: Delegation Policy Inheritance - Evidence
+================================================
+
+Date: 2026-03-12
+
+Changes Made
+------------
+
+1. Modified: crates/types/src/delegation.rs
+   - Added `parent_policy: Option<EffectiveRunPolicy>` field to DelegationRequest
+   - This allows parent policy to be passed to child delegations
+
+2. Modified: crates/runtime/src/delegation.rs
+   - Removed "allowlists not enforced" comment (lines 22-23 in original)
+   - Added MAX_DELEGATION_DEPTH constant = 5
+   - Added calculate_delegation_depth() function to count "subagent:" prefixes
+   - Added narrow_child_policy() function implementing strictest-wins semantics:
+     * Budget: min(parent_remaining, child_requested)
+     * Tools: intersection(parent_allowed, child_requested)
+     * Max turns: min(parent_remaining, child_requested)
+     * Deadline: inherits parent's remaining deadline
+     * Disallowed tools: parent's disallowed list preserved
+   - Modified delegate() method to:
+     * Check depth limit at admission (returns error if depth >= 5)
+     * Narrow child policy from parent if parent_policy present
+     * Use filtered_schemas() for tool filtering based on narrowed policy
+     * Pass child policy to child runtime via run_session_for_session_with_policy()
+     * Child cancellation inherits parent's cancellation token (existing behavior preserved)
+
+3. Modified: crates/tools/src/delegation_tools.rs
+   - Updated DelegationRequest construction to include parent_policy from context
+
+Tests Added
+-----------
+
+All tests in crates/runtime/src/delegation.rs:
+
+Depth Calculation Tests:
+- test_calculate_delegation_depth_root: Verifies depth=0 for root session
+- test_calculate_delegation_depth_one_level: Verifies depth=1 for single subagent
+- test_calculate_delegation_depth_three_levels: Verifies depth=3 for 3-level chain
+- test_calculate_delegation_depth_five_levels: Verifies depth=5 for 5-level chain
+
+Policy Narrowing Tests:
+- test_narrow_child_policy_budget_min_parent: Verifies budget=min(parent, child) when parent smaller
+- test_narrow_child_policy_budget_min_child: Verifies budget=min(parent, child) when child smaller
+- test_narrow_child_policy_max_turns: Verifies max_turns=min(parent, child)
+- test_narrow_child_policy_tool_intersection: Verifies tools=intersection(parent, child)
+- test_narrow_child_policy_disallowed_tools_inherited: Verifies disallowed tools preserved
+- test_narrow_child_policy_deadline_inherited: Verifies deadline inherited from parent
+- test_narrow_child_policy_parent_run_id_set: Verifies parent_run_id tracks delegation chain
+
+Test Results
+------------
+
+$ cargo test -p runtime -- delegation::tests
+running 14 tests
+test delegation::tests::delegation_selection_for_default_agent_always_uses_root ... ok
+test delegation::tests::delegation_selection_inherits_caller_when_agent_has_no_override ... ok
+test delegation::tests::delegation_selection_uses_agent_override_when_present ... ok
+test delegation::tests::test_calculate_delegation_depth_root ... ok
+test delegation::tests::test_calculate_delegation_depth_three_levels ... ok
+test delegation::tests::test_calculate_delegation_depth_five_levels ... ok
+test delegation::tests::test_calculate_delegation_depth_one_level ... ok
+test delegation::tests::test_narrow_child_policy_budget_min_parent ... ok
+test delegation::tests::test_narrow_child_policy_parent_run_id_set ... ok
+test delegation::tests::test_narrow_child_policy_max_turns ... ok
+test delegation::tests::test_narrow_child_policy_deadline_inherited ... ok
+test delegation::tests::test_narrow_child_policy_budget_min_child ... ok
+test delegation::tests::test_narrow_child_policy_disallowed_tools_inherited ... ok
+test delegation::tests::test_narrow_child_policy_tool_intersection ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored
+
+Clippy Check
+------------
+
+$ cargo clippy -p runtime --lib
+No warnings or errors in runtime crate
+
+$ cargo clippy -p types --lib  
+No warnings or errors in types crate
+
+Verification
+------------
+
+✅ Max delegation depth = 5 enforced at admission
+✅ Child policy narrowed from parent (strictest-wins)
+✅ Budget: min(parent_remaining, child_requested)
+✅ Tools: intersection(parent_allowed, child_requested)
+✅ Tool allowlist enforced via filtered_schemas()
+✅ "allowlists not enforced" comment removed
+✅ Child cancellation inherits parent token
+✅ Deadline inherited from parent policy
+✅ All 14 delegation tests pass
+✅ No clippy warnings in modified code

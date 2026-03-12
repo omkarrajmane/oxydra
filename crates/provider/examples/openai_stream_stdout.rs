@@ -67,6 +67,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     StreamItem::Media(_) => {
                         // Media events are emitted by tools; ignored in this example.
                     }
+                    StreamItem::PolicyEvent(event) => {
+                        eprintln!("\n[policy_event] {:?}", event);
+                    }
                 }
             }
             println!();

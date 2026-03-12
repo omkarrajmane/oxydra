@@ -237,6 +237,27 @@ impl TuiViewModel {
                     self.push_message(ChatMessage::Assistant(String::new()));
                 }
             }
+            GatewayServerFrame::PolicyNotification(notification) => {
+                // Policy enforcement notifications — show as system messages.
+                let message = match &notification.event {
+                    types::PolicyStreamEvent::BudgetWarning {
+                        remaining,
+                        threshold_pct,
+                    } => {
+                        format!(
+                            "Budget warning: {remaining} remaining (threshold: {threshold_pct}%)"
+                        )
+                    }
+                    types::PolicyStreamEvent::PolicyStop { reason } => {
+                        format!("Policy stop: {reason:?}")
+                    }
+                    types::PolicyStreamEvent::BudgetUpdate { remaining } => {
+                        format!("Budget update: {remaining} remaining")
+                    }
+                    _ => "Policy notification".to_owned(),
+                };
+                self.push_message(ChatMessage::System(message));
+            }
             GatewayServerFrame::MediaAttachment(media) => {
                 // In the TUI, media attachments cannot be displayed inline.
                 // Show a system message indicating media was sent via the channel.

@@ -1,0 +1,59 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+warning: field `effective_policy` is never read
+   --> crates/gateway/src/session.rs:103:16
+    |
+ 89 | pub struct SessionState {
+    |            ------------ field in this struct
+...
+103 |     pub(crate) effective_policy: Mutex<Option<EffectiveRunPolicy>>,
+    |                ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `set_effective_policy` and `get_effective_policy` are never used
+   --> crates/gateway/src/session.rs:138:25
+    |
+109 | impl SessionState {
+    | ----------------- methods in this implementation
+...
+138 |     pub(crate) async fn set_effective_policy(&self, policy: EffectiveRunPolicy) {
+    |                         ^^^^^^^^^^^^^^^^^^^^
+...
+144 |     pub(crate) async fn get_effective_policy(&self) -> Option<EffectiveRunPolicy> {
+    |                         ^^^^^^^^^^^^^^^^^^^^
+
+warning: `gateway` (lib) generated 2 warnings
+   Compiling sdk v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/sdk)
+warning: field `runtime` is never read
+  --> crates/sdk/src/client.rs:37:5
+   |
+36 | pub struct OxydraClient {
+   |            ------------ field in this struct
+37 |     runtime: Arc<AgentRuntime>,
+   |     ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variants `Text`, `ToolCall`, `ToolResult`, `UsageUpdate`, and `Progress` are never constructed
+   --> crates/sdk/src/events.rs:124:5
+    |
+123 | pub(crate) enum InternalRunEvent {
+    |                 ---------------- variants in this enum
+124 |     Text(String),
+    |     ^^^^
+125 |     ToolCall(ToolCall),
+    |     ^^^^^^^^
+126 |     ToolResult {
+    |     ^^^^^^^^^^
+...
+131 |     UsageUpdate(UsageUpdate),
+    |     ^^^^^^^^^^^
+132 |     Progress {
+    |     ^^^^^^^^
+    |
+    = note: `InternalRunEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `sdk` (lib) generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.55s

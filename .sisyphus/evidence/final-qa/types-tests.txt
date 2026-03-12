@@ -1,0 +1,196 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Blocking waiting for file lock on artifact directory
+   Compiling types v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/types)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 41.66s
+     Running unittests src/lib.rs (target/debug/deps/types-1f69882f59c35b54)
+
+running 85 tests
+test config::tests::effective_catalog_provider_defaults_by_type ... ok
+test config::tests::default_config_has_openai_and_anthropic_registry_entries ... ok
+test config::tests::unknown_provider_rejected ... ok
+test config::tests::model_validated_against_catalog_provider ... ok
+test config::tests::custom_provider_resolves_from_registry ... ok
+test config::tests::delegation_selection_inherits_caller_when_agent_has_no_override ... ok
+test config::tests::top_level_selection_uses_named_agent_override ... ok
+test config::tests::default_gateway_config_uses_power_user_limits ... ok
+test config::tests::unknown_model_caps_include_attachment_and_modalities ... ok
+test config::tests::top_level_selection_for_default_always_uses_root ... ok
+test config::tests::default_agent_config_validates_successfully ... ok
+test config::tests::provider_type_serde_round_trips ... ok
+test config::tests::validation_rejects_unknown_provider ... ok
+test config::tests::validation_rejects_zero_gateway_limit ... ok
+test config::tests::validation_rejects_zero_shell_command_timeout ... ok
+test policy::permission_tests::test_default_tool_permission_handler_default ... ok
+test config::tests::registry_entry_serialization_round_trip ... ok
+test policy::permission_tests::test_tool_permission_context_creation ... ok
+test policy::tests::test_effective_run_policy_construction ... ok
+test policy::tests::test_effective_run_policy_with_optional_fields ... ok
+test policy::tests::test_rollout_mode_default ... ok
+test policy::tests::test_rollout_mode_deserialization ... ok
+test policy::tests::test_rollout_mode_serialization ... ok
+test policy::tests::test_rollout_mode_variants ... ok
+test policy::tests::test_run_policy_input_construction ... ok
+test policy::permission_tests::test_tool_permission_decision_equality ... ok
+test policy::tests::test_run_policy_input_default ... ok
+test policy::tests::test_run_policy_input_serde_empty ... ok
+test policy::tests::test_run_policy_input_serde_partial ... ok
+test policy::tests::test_run_policy_input_serde_roundtrip ... ok
+test policy::tests::test_serialized_json_omits_none_fields ... ok
+test policy::tests::test_stop_reason_clone ... ok
+test policy::tests::test_stop_reason_debug ... ok
+test policy::tests::test_stop_reason_equality ... ok
+test policy::tests::test_stop_reason_variant_construction ... ok
+test policy::tests::test_stop_reason_wildcard_matching ... ok
+test policy::tests::test_tool_policy_input_construction ... ok
+test policy::tests::test_tool_policy_input_default ... ok
+test policy::tests::test_tool_policy_input_serde_empty ... ok
+test policy::tests::test_tool_policy_input_serde_roundtrip ... ok
+test policy_merge::tests::edge_case_auto_approve_respects_disallowed ... ok
+test policy_merge::tests::edge_case_disallowed_wins_even_when_only_tool ... ok
+test policy_merge::tests::edge_case_disallowed_wins_over_allowlist ... ok
+test policy_merge::tests::edge_case_empty_toolset_means_all_tools_allowed ... ok
+test policy_merge::tests::edge_case_none_values_mean_no_restriction ... ok
+test policy_merge::tests::edge_case_multiple_disallowed_layers_union ... ok
+test policy_merge::tests::edge_case_parent_denies_child_allows_is_denied ... ok
+test policy_merge::tests::edge_case_strictest_wins_across_all_numeric_limits ... ok
+test policy_merge::tests::edge_case_zero_max_turns_is_valid ... ok
+test config::tests::validation_rejects_invalid_browser_cdp_url ... ok
+test policy_merge::tests::test_disallowed_tools_always_wins ... ok
+test policy_merge::tests::test_merge_auto_approve_empty_by_default ... ok
+test policy_merge::tests::test_merge_auto_approve_intersection_with_allowed ... ok
+test policy_merge::tests::test_merge_auto_approve_respects_disallowed ... ok
+test policy_merge::tests::test_merge_deadline_calculated_from_turn_timeout ... ok
+test policy_merge::tests::test_merge_deadline_per_run_more_restrictive ... ok
+test policy_merge::tests::test_merge_disallowed_tools_empty_by_default ... ok
+test policy_merge::tests::test_merge_disallowed_tools_filters_all_layers ... ok
+test policy_merge::tests::test_merge_disallowed_tools_from_per_run ... ok
+test policy_merge::tests::test_merge_max_budget_global_only ... ok
+test policy_merge::tests::test_merge_max_budget_no_limits ... ok
+test policy_merge::tests::test_merge_max_budget_per_run_strictest ... ok
+test policy_merge::tests::test_merge_max_budget_strictest_wins ... ok
+test policy_merge::tests::test_merge_max_budget_zero ... ok
+test policy_merge::tests::test_merge_max_turns_agent_more_restrictive ... ok
+test policy_merge::tests::test_merge_max_turns_global_most_restrictive ... ok
+test policy_merge::tests::test_merge_max_turns_global_only ... ok
+test policy_merge::tests::test_merge_max_turns_per_run_most_restrictive ... ok
+test policy_merge::tests::test_merge_max_turns_zero_edge_case ... ok
+test policy::permission_tests::test_default_handler_ignores_tool_name ... ok
+test policy::permission_tests::test_default_handler_returns_allow ... ok
+test policy::permission_tests::test_deny_decision_propagates_reason ... ok
+test policy_merge::tests::test_merge_policy_empty_toolsets ... ok
+test policy::permission_tests::test_allow_with_modification_decision ... ok
+test policy_merge::tests::test_merge_policy_full_integration ... ok
+test policy_merge::tests::test_merge_policy_none_means_no_restriction ... ok
+test policy_merge::tests::test_merge_toolset_agent_allowlist_restricts ... ok
+test policy_merge::tests::test_merge_toolset_all_tools_available ... ok
+test policy_merge::tests::test_merge_toolset_empty_agent_allowlist_means_all ... ok
+test policy_merge::tests::test_merge_toolset_empty_per_run_toolset_means_all ... ok
+test policy_merge::tests::test_merge_toolset_intersection_all_layers ... ok
+test policy_merge::tests::test_merge_toolset_per_run_restricts ... ok
+test runner::tests::runner_user_config_accepts_valid_enabled_telegram_channel ... ok
+test runner::tests::runner_user_config_rejects_enabled_telegram_without_sender ... ok
+test runner::tests::runner_user_config_rejects_invalid_timezone ... ok
+
+test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/channel_contracts.rs (target/debug/deps/channel_contracts-c7085d6b0af529cd)
+
+running 4 tests
+test gateway_client_frames_reject_missing_required_fields ... ok
+test gateway_client_frames_round_trip_through_serde ... ok
+test gateway_server_frames_reject_invalid_payloads ... ok
+test gateway_server_frames_round_trip_through_serde ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/config_contracts.rs (target/debug/deps/config_contracts-b5d2003238acb58b)
+
+running 14 tests
+test config_version_accepts_supported_major ... ok
+test default_memory_embedding_config_uses_model2vec_potion_32m ... ok
+test config_version_rejects_invalid_format ... ok
+test config_version_rejects_unsupported_major ... ok
+test default_agent_config_is_valid ... ok
+test memory_embedding_enums_serialize_with_expected_wire_values ... ok
+test validation_rejects_empty_model_id ... ok
+test validation_rejects_enabled_remote_memory_without_auth_token ... ok
+test validation_rejects_invalid_context_budget_ratio ... ok
+test validation_rejects_invalid_context_fallback_max_context_tokens ... ok
+test validation_rejects_invalid_reliability_bounds ... ok
+test validation_rejects_invalid_retrieval_weight_sum ... ok
+test validation_rejects_invalid_summarization_min_turns ... ok
+test validation_rejects_unknown_provider ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/core_types_contracts.rs (target/debug/deps/core_types_contracts-8f0583f598ea30de)
+
+running 19 tests
+test caps_derived_from_model_descriptor ... ok
+test caps_default_by_provider ... ok
+test caps_overlay_applies ... ok
+test derive_input_caps_overlay_applies_and_model_override_wins ... ok
+test caps_model_override_takes_precedence_over_provider_default ... ok
+test model_catalog_validates_provider_and_model_id ... ok
+test catalog_input_caps_uses_overrides ... ok
+test models_dev_interleaved_boolean_deserializes ... ok
+test models_dev_json_snippet_deserializes ... ok
+test runtime_error_composes_provider_and_tool_errors ... ok
+test to_input_caps_maps_attachment_modalities ... ok
+test to_provider_caps_maps_fields_correctly ... ok
+test pinned_catalog_snapshot_rejects_missing_required_fields ... ok
+test unknown_image_model_defaults_disable_tools_and_infer_image_modality ... ok
+test unknown_model_defaults_support_attachment_overrides ... ok
+test model_catalog_regenerator_writes_canonical_sorted_snapshot ... ok
+test all_models_iterator_yields_all_entries ... ok
+test pinned_catalog_snapshot_parses_and_validates_known_model ... ok
+test pinned_caps_overrides_parses ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/runner_contracts.rs (target/debug/deps/runner_contracts-79d0ae494fcb9416)
+
+running 22 tests
+test bootstrap_envelope_rejects_inconsistent_startup_status ... ok
+test bot_token_env_refs_only_from_enabled_channels ... ok
+test bootstrap_envelope_rejects_invalid_runtime_policy_mounts ... ok
+test bootstrap_envelope_rejects_invalid_length_prefix ... ok
+test log_entry_text_format ... ok
+test empty_senders_list_means_nobody_can_interact ... ok
+test channels_config_is_optional_and_defaults_empty ... ok
+test bootstrap_envelope_supports_length_prefixed_round_trip ... ok
+test channels_config_defaults_for_telegram_fields ... ok
+test logs_request_effective_tail_preserves_small_value ... ok
+test channels_config_with_telegram_round_trips_through_toml ... ok
+test logs_request_effective_tail_uses_default ... ok
+test log_entry_text_format_without_timestamp ... ok
+test runner_config_defaults_to_current_version ... ok
+test logs_request_effective_tail_clamps_to_max ... ok
+test runner_control_logs_request_defaults ... ok
+test runner_global_config_rejects_empty_user_config_path ... ok
+test runner_user_config_rejects_invalid_config_version_format ... ok
+test runner_global_config_rejects_unsupported_config_major ... ok
+test runner_user_config_rejects_invalid_resource_limits ... ok
+test runner_user_config_rejects_invalid_timezone ... ok
+test sender_binding_without_display_name ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tool_contracts.rs (target/debug/deps/tool_contracts-85f0f7e297224b8e)
+
+running 2 tests
+test function_decl_serializes_to_expected_json_shape ... ok
+test function_decl_supports_full_json_schema_keywords ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests types
+
+running 1 test
+test crates/types/src/tool.rs - tool::ToolParameterSchema (line 29) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.61s; merged doctests compilation took 0.17s

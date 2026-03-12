@@ -1,0 +1,69 @@
+Task 20: Rollout Mode Flags - Implementation Evidence
+======================================================
+
+Date: 2026-03-12
+
+Summary
+-------
+Successfully implemented RolloutMode behavior across all 4 enforcement points:
+- Enforce: Block/stop when policy violated (default)
+- SoftFail: Log but continue (emit PolicyEvent)
+- ObserveOnly: Log evaluations, never block
+
+Files Modified
+--------------
+1. crates/runtime/src/lib.rs
+   - Added RolloutMode checks for turn limit enforcement
+   - Added RolloutMode checks for deadline enforcement  
+   - Added RolloutMode checks for budget exhausted enforcement
+   - SoftFail mode emits PolicyStreamEvent::PolicyStop via StreamItem
+
+2. crates/tools/src/registry.rs
+   - Added RolloutMode checks for disallowed tool enforcement
+   - Enforce mode: returns ToolError::PolicyViolation
+   - SoftFail/ObserveOnly modes: allow tool execution with logging
+   - SoftFail mode emits PolicyStreamEvent via event_sender
+
+3. crates/runtime/src/delegation.rs
+   - Added RolloutMode checks for delegation depth enforcement
+   - Enforce mode: returns RuntimeError::Tool with depth exceeded message
+   - SoftFail/ObserveOnly modes: continue with delegation despite depth violation
+   - SoftFail mode emits PolicyStreamEvent via progress_sender
+
+4. crates/runtime/src/tests.rs
+   - Added 6 comprehensive tests for all RolloutMode variants:
+     * rollout_mode_enforce_blocks_on_turn_limit
+     * rollout_mode_softfail_continues_on_turn_limit
+     * rollout_mode_observeonly_continues_on_turn_limit
+     * rollout_mode_enforce_blocks_on_deadline
+     * rollout_mode_softfail_continues_on_deadline
+     * rollout_mode_enforce_is_default
+
+Test Results
+------------
+$ cargo test -p runtime -- rollout
+running 6 tests
+test tests::rollout_mode_enforce_is_default ... ok
+test tests::rollout_mode_enforce_blocks_on_turn_limit ... ok
+test tests::rollout_mode_enforce_blocks_on_deadline ... ok
+test tests::rollout_mode_softfail_continues_on_deadline ... ok
+test tests::rollout_mode_observeonly_continues_on_turn_limit ... ok
+test tests::rollout_mode_softfail_continues_on_turn_limit ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored
+
+Key Implementation Details
+--------------------------
+1. Default behavior preserved: RolloutMode::Enforce is the default
+2. Backward compatibility: policy: None path skips rollout checks
+3. SoftFail behavior: Logs warning + emits PolicyEvent + continues execution
+4. ObserveOnly behavior: Logs evaluation only, never blocks, no events emitted
+5. All enforcement points check mode before acting
+6. PolicyStreamEvent used for SoftFail event emission
+
+Verification
+------------
+- All 6 rollout tests pass
+- No compiler errors or warnings in modified code
+- Clippy clean on rollout-related changes
+- Default behavior (Enforce) maintains existing enforcement

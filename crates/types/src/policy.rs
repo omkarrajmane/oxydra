@@ -101,6 +101,8 @@ pub enum StopReason {
     ToolPermissionDenied,
     /// Provider timed out
     ProviderTimedOut,
+    /// Other error
+    Error(String),
 }
 
 /// How to handle policy violations during rollout.
@@ -147,9 +149,18 @@ mod tests {
             disallowed_tools: Some(vec!["dangerous_tool".to_string()]),
         };
 
-        assert_eq!(tool_policy.toolset, Some(vec!["tool1".to_string(), "tool2".to_string()]));
-        assert_eq!(tool_policy.auto_approve_tools, Some(vec!["tool1".to_string()]));
-        assert_eq!(tool_policy.disallowed_tools, Some(vec!["dangerous_tool".to_string()]));
+        assert_eq!(
+            tool_policy.toolset,
+            Some(vec!["tool1".to_string(), "tool2".to_string()])
+        );
+        assert_eq!(
+            tool_policy.auto_approve_tools,
+            Some(vec!["tool1".to_string()])
+        );
+        assert_eq!(
+            tool_policy.disallowed_tools,
+            Some(vec!["dangerous_tool".to_string()])
+        );
     }
 
     #[test]
@@ -185,7 +196,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&original).expect("serialization failed");
-        let deserialized: RunPolicyInput = serde_json::from_str(&json).expect("deserialization failed");
+        let deserialized: RunPolicyInput =
+            serde_json::from_str(&json).expect("deserialization failed");
 
         assert_eq!(original, deserialized);
     }
@@ -199,7 +211,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&original).expect("serialization failed");
-        let deserialized: ToolPolicyInput = serde_json::from_str(&json).expect("deserialization failed");
+        let deserialized: ToolPolicyInput =
+            serde_json::from_str(&json).expect("deserialization failed");
 
         assert_eq!(original, deserialized);
     }
@@ -220,7 +233,8 @@ mod tests {
     fn test_tool_policy_input_serde_empty() {
         // Test that an empty JSON object deserializes to all None values
         let json = "{}";
-        let tool_policy: ToolPolicyInput = serde_json::from_str(json).expect("deserialization failed");
+        let tool_policy: ToolPolicyInput =
+            serde_json::from_str(json).expect("deserialization failed");
 
         assert!(tool_policy.toolset.is_none());
         assert!(tool_policy.auto_approve_tools.is_none());
@@ -250,7 +264,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&policy).expect("serialization failed");
-        
+
         // Should only contain max_budget_microusd
         assert!(json.contains("max_budget_microusd"));
         assert!(!json.contains("max_runtime"));
@@ -310,7 +324,10 @@ mod tests {
         assert_eq!(StopReason::Completed, StopReason::Completed);
         assert_ne!(StopReason::Completed, StopReason::Cancelled);
         assert_eq!(StopReason::MaxTurns, StopReason::MaxTurns);
-        assert_ne!(StopReason::MaxBudgetExceeded, StopReason::MaxRuntimeExceeded);
+        assert_ne!(
+            StopReason::MaxBudgetExceeded,
+            StopReason::MaxRuntimeExceeded
+        );
     }
 
     #[test]
@@ -414,9 +431,7 @@ mod tests {
         let debug = format!("{:?}", reason);
         assert!(debug.contains("ToolDisallowed"));
     }
-
 }
-
 
 // ============================================================================
 // Tool Permission Handler Types
@@ -520,9 +535,7 @@ mod permission_tests {
         let context = create_test_context();
         let args = serde_json::json!({"key": "value"});
 
-        let decision = handler
-            .check_permission("test_tool", &args, &context)
-            .await;
+        let decision = handler.check_permission("test_tool", &args, &context).await;
 
         assert_eq!(decision, ToolPermissionDecision::Allow);
     }
@@ -605,9 +618,7 @@ mod permission_tests {
         let context = create_test_context();
         let args = serde_json::json!({"original": true});
 
-        let decision = handler
-            .check_permission("some_tool", &args, &context)
-            .await;
+        let decision = handler.check_permission("some_tool", &args, &context).await;
 
         match decision {
             ToolPermissionDecision::AllowWithModification { modified_args } => {

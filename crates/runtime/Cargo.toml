@@ -22,6 +22,7 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 mockall = "0.14"
+proptest = "1.6"
 provider = { path = "../provider" }
 shell-daemon = { path = "../shell-daemon" }
 tokio = { version = "1", features = ["full"] }

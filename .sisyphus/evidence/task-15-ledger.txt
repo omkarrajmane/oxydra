@@ -1,0 +1,91 @@
+Task 15: Session Budget Ledger - Implementation Evidence
+=======================================================
+
+Date: 2026-03-12
+
+Files Created
+-------------
+- crates/runtime/src/budget_ledger.rs (755 lines)
+
+Files Modified
+--------------
+- crates/runtime/src/lib.rs (added module declaration and exports)
+- crates/runtime/src/provider_response.rs (added PolicyEvent match arm)
+- crates/memory/src/scheduler_store.rs (added policy field)
+- crates/tools/src/scheduler_tools.rs (added policy field)
+- crates/runtime/src/tests.rs (added policy field to test fixtures)
+
+Test Results
+------------
+All 19 budget_ledger tests pass:
+
+running 19 tests
+test budget_ledger::tests::test_budget_snapshot_helpers ... ok
+test budget_ledger::tests::test_cancel_reservation ... ok
+test budget_ledger::tests::test_child_ledger_creation ... ok
+test budget_ledger::tests::test_child_ledger_exceeds_parent ... ok
+test budget_ledger::tests::test_child_ledger_reserve_deducts_from_parent ... ok
+test budget_ledger::tests::test_budget_ledger_creation ... ok
+test budget_ledger::tests::test_child_reservation_exceeds_parent_remaining ... ok
+test budget_ledger::tests::test_budget_exhausted_display ... ok
+test budget_ledger::tests::test_deep_parent_child_chain ... ok
+test budget_ledger::tests::test_force_settle ... ok
+test budget_ledger::tests::test_reservation_drop_cancels ... ok
+test budget_ledger::tests::test_reserve_and_settle_exact ... ok
+test budget_ledger::tests::test_reserve_and_settle_over ... ok
+test budget_ledger::tests::test_reserve_and_settle_under ... ok
+test budget_ledger::tests::test_reserve_exhausted_budget ... ok
+test budget_ledger::tests::test_child_ledger_clone_independence ... ok
+test budget_ledger::tests::test_zero_cost_reservation ... ok
+test budget_ledger::tests::test_concurrent_over_reservation ... ok
+test budget_ledger::tests::test_concurrent_reservations ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored
+
+Doc-tests: 1 passed
+
+Implementation Summary
+----------------------
+
+1. BudgetLedger struct with atomic counters (AtomicU64) for thread safety
+   - initial: u64 (initial budget)
+   - reserved: AtomicU64 (currently reserved amount)
+   - settled: AtomicU64 (actual spend)
+   - parent: Option<Arc<BudgetLedgerInner>> (parent ledger reference)
+
+2. Core methods implemented:
+   - reserve(estimated_cost) -> Result<Reservation, BudgetExhausted>
+   - settle(actual_cost) (via Reservation)
+   - remaining() -> BudgetSnapshot
+   - create_child(allocation) -> Option<BudgetLedger>
+   - force_settle(cost) -> u64
+
+3. Types exported:
+   - BudgetLedger: Main ledger struct
+   - BudgetSnapshot: Immutable snapshot of budget state
+   - BudgetExhausted: Error type when budget is exhausted
+   - Reservation: RAII guard for reserved budget
+
+4. Thread safety:
+   - All operations use Ordering::SeqCst for atomic operations
+   - Parent/child hierarchy uses Arc for shared ownership
+   - Concurrent reservation tests verify thread safety
+
+5. Integration with turn loop:
+   - Budget ledger initialized when policy is present
+   - Reserve called before provider call (line 536-551 in lib.rs)
+   - Settle called after provider call with actual cost (line 587-595)
+   - Budget exhaustion check uses ledger as authoritative source (line 650-653)
+
+6. Parent/child hierarchy:
+   - Child ledgers propagate reservations up the chain
+   - Child ledgers propagate settlements up the chain
+   - Parent settled includes both allocations and actual child spend
+   - Supports deep chains (grandparent -> parent -> child)
+
+Verification Commands
+-------------------
+cargo test -p runtime -- budget_ledger
+ cargo clippy -p runtime --lib (no budget_ledger warnings)
+
+All tests pass successfully.

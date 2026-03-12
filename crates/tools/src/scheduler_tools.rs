@@ -259,6 +259,30 @@ impl Tool for ScheduleCreateTool {
         let now = Utc::now().to_rfc3339();
         let schedule_id = uuid::Uuid::new_v4().to_string();
 
+        let policy = context.policy.as_ref().map(|p| {
+            let max_runtime = p.deadline.map(|d| {
+                let duration = d.signed_duration_since(p.started_at);
+                if duration.num_seconds() > 0 {
+                    std::time::Duration::from_secs(duration.num_seconds() as u64)
+                } else {
+                    std::time::Duration::from_secs(0)
+                }
+            });
+
+            let tool_policy = types::ToolPolicyInput {
+                toolset: Some(p.toolset.iter().map(|t| t.name.clone()).collect()),
+                auto_approve_tools: Some(p.auto_approve_tools.iter().cloned().collect()),
+                disallowed_tools: Some(p.disallowed_tools.iter().cloned().collect()),
+            };
+
+            types::RunPolicyInput {
+                max_runtime,
+                max_budget_microusd: Some(p.initial_budget_microusd),
+                max_turns: p.max_turns.map(|t| t as usize),
+                tool_policy: Some(tool_policy),
+            }
+        });
+
         let def = ScheduleDefinition {
             schedule_id: schedule_id.clone(),
             user_id,
@@ -275,6 +299,7 @@ impl Tool for ScheduleCreateTool {
             consecutive_failures: 0,
             channel_id: context.channel_id.clone(),
             channel_context_id: context.channel_context_id.clone(),
+            policy,
         };
 
         self.store

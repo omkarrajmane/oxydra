@@ -2,8 +2,11 @@ use std::collections::BTreeMap;
 
 use super::*;
 use runtime::ScheduledTurnRunner;
-use types::{AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, InlineMedia, ProviderSelection, RunPolicyInput};
 use runtime::policy_guard::{PolicyValidationError, resolve_policy};
+use types::{
+    AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, InlineMedia, ProviderSelection,
+    RunPolicyInput,
+};
 
 /// User-submitted content for a single turn (text + optional media).
 pub struct UserTurnInput {
@@ -304,10 +307,11 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
         };
 
         // Get agent definition (or use empty one if not found)
-        let agent_def = self.agent_definitions
+        let agent_def = self
+            .agent_definitions
             .get(agent_name)
             .cloned()
-            .unwrap_or_else(|| types::AgentDefinition {
+            .unwrap_or(types::AgentDefinition {
                 system_prompt: None,
                 system_prompt_file: None,
                 selection: None,
@@ -332,23 +336,73 @@ impl ScheduledTurnRunner for RuntimeGatewayTurnRunner {
         session_id: &str,
         prompt: String,
         cancellation: CancellationToken,
+        policy: Option<EffectiveRunPolicy>,
     ) -> Result<String, RuntimeError> {
-        let (delta_tx, _delta_rx) = mpsc::unbounded_channel();
-        let input = UserTurnInput {
-            prompt,
-            attachments: Vec::new(),
+        let (delta_tx, mut delta_rx) = mpsc::unbounded_channel();
+
+        // Build context
+        let mut context = {
+            let mut contexts = self.contexts.lock().await;
+            contexts
+                .entry(session_id.to_owned())
+                .or_insert_with(|| self.base_context("default"))
+                .clone()
         };
-        let response = self
-            .run_turn(
-                user_id,
-                session_id,
-                input,
-                cancellation,
-                delta_tx,
-                TurnOrigin::default(),
-            )
-            .await?;
-        Ok(response.message.content.unwrap_or_default())
+
+        let tool_context = types::ToolExecutionContext {
+            user_id: Some(user_id.to_owned()),
+            session_id: Some(session_id.to_owned()),
+            provider: Some(context.provider.clone()),
+            model: Some(context.model.clone()),
+            channel_capabilities: None,
+            event_sender: None,
+            channel_id: None,
+            channel_context_id: None,
+            inbound_attachments: None,
+            ..Default::default()
+        };
+
+        // Push user message
+        context.messages.push(Message {
+            role: MessageRole::User,
+            content: Some(prompt),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        });
+
+        // Run with or without policy
+        let result = if let Some(policy) = policy {
+            self.runtime
+                .run_session_for_session_with_policy(
+                    session_id,
+                    &mut context,
+                    &cancellation,
+                    delta_tx,
+                    &tool_context,
+                    policy,
+                )
+                .await
+        } else {
+            self.runtime
+                .run_session_for_session_with_stream_events(
+                    session_id,
+                    &mut context,
+                    &cancellation,
+                    delta_tx,
+                    &tool_context,
+                )
+                .await
+        };
+
+        // Drain delta receiver to prevent channel close errors
+        while delta_rx.recv().await.is_some() {}
+
+        // Update context
+        let mut contexts = self.contexts.lock().await;
+        contexts.insert(session_id.to_owned(), context);
+
+        result.map(|r| r.message.content.unwrap_or_default())
     }
 }
 

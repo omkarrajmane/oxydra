@@ -108,6 +108,29 @@ impl GatewayTurnRunner for ScriptedTurnRunner {
             .await
             .push(session_id.to_owned());
     }
+    fn resolve_session_policy(
+        &self,
+        _agent_name: &str,
+        per_run: &types::RunPolicyInput,
+    ) -> Result<types::EffectiveRunPolicy, runtime::PolicyValidationError> {
+        // Test implementation: return a default effective policy
+        use chrono::Utc;
+        Ok(types::EffectiveRunPolicy {
+            started_at: Utc::now(),
+            deadline: per_run.max_runtime.map(|d| {
+                Utc::now()
+                    + chrono::Duration::from_std(d).unwrap_or_else(|_| chrono::Duration::seconds(0))
+            }),
+            initial_budget_microusd: per_run.max_budget_microusd.unwrap_or(0),
+            remaining_budget_microusd: per_run.max_budget_microusd.unwrap_or(0),
+            toolset: vec![],
+            auto_approve_tools: std::collections::HashSet::new(),
+            disallowed_tools: std::collections::HashSet::new(),
+            parent_run_id: None,
+            max_turns: per_run.max_turns.map(|v| v as u32),
+            rollout_mode: types::RolloutMode::Enforce,
+        })
+    }
 }
 
 struct ScriptedTurn {

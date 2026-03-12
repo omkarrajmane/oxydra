@@ -795,6 +795,10 @@ async fn run_session_for_session_with_tool_context_propagates_user_context_to_to
         channel_id: None,
         channel_context_id: None,
         inbound_attachments: None,
+        policy: None,
+        permission_handler: None,
+        turn: None,
+        remaining_budget: None,
     };
 
     let response = runtime
@@ -3734,7 +3738,7 @@ mod scheduler_executor_tests {
     use types::{
         GatewayServerFrame, NotificationPolicy, RuntimeError, ScheduleCadence, ScheduleDefinition,
         ScheduleRunRecord, ScheduleRunStatus, ScheduleSearchFilters, ScheduleSearchResult,
-        ScheduleStatus, SchedulerConfig, SchedulerError,
+        EffectiveRunPolicy, ScheduleStatus, SchedulerConfig, SchedulerError,
     };
 
     use crate::ScheduledTurnRunner;
@@ -3763,6 +3767,7 @@ mod scheduler_executor_tests {
             _session_id: &str,
             _prompt: String,
             _cancellation: CancellationToken,
+            _policy: Option<EffectiveRunPolicy>,
         ) -> Result<String, RuntimeError> {
             let mut responses = self.responses.lock().await;
             if responses.is_empty() {
@@ -3931,6 +3936,7 @@ mod scheduler_executor_tests {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         }
     }
 
@@ -4086,6 +4092,7 @@ mod scheduler_executor_tests {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         };
         let store = Arc::new(MockSchedulerStore::new(vec![schedule]));
         let runner = Arc::new(MockTurnRunner::new(vec![Ok("Done".to_owned())]));
@@ -4138,12 +4145,14 @@ mod scheduler_executor_tests {
 use types::{AgentDefinition, DelegationRequest, DelegationResult, DelegationStatus, DelegationExecutor, set_global_delegation_executor};
 use crate::RuntimeDelegationExecutor;
 
+#[allow(dead_code)]
 /// A mock delegation executor that records all delegation requests for verification
 struct RecordingDelegationExecutor {
     records: Arc<Mutex<Vec<DelegationRecord>>>,
     inner: RuntimeDelegationExecutor,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct DelegationRecord {
     parent_session_id: String,
@@ -4181,8 +4190,8 @@ impl DelegationExecutor for RecordingDelegationExecutor {
     async fn delegate(
         &self,
         request: DelegationRequest,
-        parent_cancellation: &CancellationToken,
-        progress_sender: Option<types::DelegationProgressSender>,
+        _parent_cancellation: &CancellationToken,
+        _progress_sender: Option<types::DelegationProgressSender>,
     ) -> Result<DelegationResult, RuntimeError> {
         // Calculate depth from session_id
         let depth = request.parent_session_id.matches("subagent:").count() + 1;
@@ -4295,6 +4304,10 @@ async fn delegation_depth_spike_three_levels() {
         channel_id: None,
         channel_context_id: None,
         inbound_attachments: None,
+        policy: None,
+        permission_handler: None,
+        turn: None,
+        remaining_budget: None,
     };
 
     // Run the session - this should trigger the delegation
@@ -4328,7 +4341,7 @@ async fn delegation_depth_spike_session_id_chaining() {
 
     // Verify the chaining pattern
     assert!(child_session.starts_with("subagent:parent_session:"));
-    assert!(grandchild_session.starts_with(&format!("subagent:subagent:parent_session:")));
+    assert!(grandchild_session.starts_with("subagent:subagent:parent_session:"));
     
     // Count the number of "subagent:" prefixes to verify depth
     let depth_from_child = child_session.matches("subagent:").count();
@@ -4388,7 +4401,7 @@ async fn delegation_depth_spike_cancellation_propagation() {
 
     let _ = set_global_delegation_executor(executor.clone());
 
-    let mut context = Context {
+    let context = Context {
         provider: provider_id.clone(),
         model: model_id.clone(),
         tools: vec![],
@@ -4412,6 +4425,10 @@ async fn delegation_depth_spike_cancellation_propagation() {
         channel_id: None,
         channel_context_id: None,
         inbound_attachments: None,
+        policy: None,
+        permission_handler: None,
+        turn: None,
+        remaining_budget: None,
     };
 
     // Spawn the session in a separate task
@@ -4500,6 +4517,7 @@ async fn delegation_depth_spike_max_depth_observation() {
             key_facts: vec![],
             max_turns: None,
             max_cost: None,
+            parent_policy: None,
         };
 
         let cancellation = CancellationToken::new();
@@ -4529,7 +4547,7 @@ async fn delegation_depth_spike_max_depth_observation() {
 #[tokio::test]
 async fn run_session_internal_enforces_deadline_before_provider_call() {
     use chrono::Utc;
-    use types::{EffectiveRunPolicy, RolloutMode, StopReason};
+    use types::{EffectiveRunPolicy, RolloutMode};
 
     let provider_id = ProviderId::from("openai");
     let model_id = ModelId::from("gpt-4o-mini");

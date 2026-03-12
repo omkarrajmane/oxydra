@@ -5,12 +5,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tools::ToolRegistry;
 use types::{
-    Context, EffectiveRunPolicy, Memory, MemoryError, MemoryHybridQueryRequest, MemoryRecallRequest,
-    MemoryRetrieval, MemoryStoreRequest, MemorySummaryReadRequest, MemorySummaryState,
-    MemorySummaryWriteRequest, Message, MessageRole, Provider, ProviderError, ProviderId,
-    ProviderSelection, Response, RuntimeError, RuntimeProgressEvent, RuntimeProgressKind,
-    SafetyTier, StreamItem, ToolCall, ToolCallDelta, ToolError, ToolExecutionContext,
-    UsageUpdate,
+    Context, EffectiveRunPolicy, Memory, MemoryError, MemoryHybridQueryRequest,
+    MemoryRecallRequest, MemoryRetrieval, MemoryStoreRequest, MemorySummaryReadRequest,
+    MemorySummaryState, MemorySummaryWriteRequest, Message, MessageRole, PolicyStreamEvent,
+    Provider, ProviderError, ProviderId, ProviderSelection, Response, RolloutMode, RuntimeError,
+    RuntimeProgressEvent, RuntimeProgressKind, SafetyTier, StopReason, StreamItem, ToolCall,
+    ToolCallDelta, ToolError, ToolExecutionContext, UsageUpdate,
 };
 
 const DEFAULT_STREAM_BUFFER_SIZE: usize = 64;
@@ -43,18 +43,20 @@ fn scrubbing_event_sender(
 }
 
 mod budget;
+mod budget_ledger;
 mod delegation;
 mod memory;
+pub mod policy_guard;
 mod provider_response;
 mod scheduler_executor;
 mod scrubbing;
 mod tool_execution;
-pub mod policy_guard;
 
+pub use budget_ledger::{BudgetExhausted, BudgetLedger, BudgetSnapshot, Reservation};
 pub use delegation::RuntimeDelegationExecutor;
+pub use policy_guard::{PolicyValidationError, resolve_policy};
 pub use scheduler_executor::{SchedulerExecutor, SchedulerNotifier};
 pub use scrubbing::PathScrubMapping;
-pub use policy_guard::{resolve_policy, PolicyValidationError};
 
 /// Trait that the gateway layer implements so the scheduler executor can
 /// trigger agent turns without depending on the gateway crate directly.
@@ -66,6 +68,7 @@ pub trait ScheduledTurnRunner: Send + Sync {
         session_id: &str,
         prompt: String,
         cancellation: CancellationToken,
+        policy: Option<EffectiveRunPolicy>,
     ) -> Result<String, RuntimeError>;
 }
 
@@ -209,6 +212,14 @@ impl AgentRuntime {
         self
     }
 
+    pub fn with_permission_handler(
+        mut self,
+        handler: Arc<dyn types::policy::ToolPermissionHandler>,
+    ) -> Self {
+        self.permission_handler = Some(handler);
+        self
+    }
+
     /// Set the primary provider/model selection for this runtime.
     ///
     /// When set, turns targeting a provider/model route that has not been
@@ -318,8 +329,15 @@ impl AgentRuntime {
         cancellation: &CancellationToken,
         tool_context: &ToolExecutionContext,
     ) -> Result<Response, RuntimeError> {
-        self.run_session_internal(Some(session_id), context, cancellation, None, tool_context, None)
-            .await
+        self.run_session_internal(
+            Some(session_id),
+            context,
+            cancellation,
+            None,
+            tool_context,
+            None,
+        )
+        .await
     }
 
     pub async fn run_session_for_session_with_stream_events(
@@ -337,6 +355,26 @@ impl AgentRuntime {
             Some(stream_events),
             tool_context,
             None,
+        )
+        .await
+    }
+
+    pub async fn run_session_for_session_with_policy(
+        &self,
+        session_id: &str,
+        context: &mut Context,
+        cancellation: &CancellationToken,
+        stream_events: RuntimeStreamEventSender,
+        tool_context: &ToolExecutionContext,
+        policy: EffectiveRunPolicy,
+    ) -> Result<Response, RuntimeError> {
+        self.run_session_internal(
+            Some(session_id),
+            context,
+            cancellation,
+            Some(stream_events),
+            tool_context,
+            Some(policy),
         )
         .await
     }
@@ -384,8 +422,11 @@ impl AgentRuntime {
     ) -> Result<Response, RuntimeError> {
         if context.tools.is_empty() {
             if let Some(ref p) = policy {
-                let allowed: std::collections::HashSet<String> = p.toolset.iter().map(|t| t.name.clone()).collect();
-                context.tools = self.tool_registry.filtered_schemas(Some(&allowed), &p.disallowed_tools);
+                let allowed: std::collections::HashSet<String> =
+                    p.toolset.iter().map(|t| t.name.clone()).collect();
+                context.tools = self
+                    .tool_registry
+                    .filtered_schemas(Some(&allowed), &p.disallowed_tools);
             } else {
                 context.tools = self.tool_registry.schemas();
             }
@@ -427,6 +468,8 @@ impl AgentRuntime {
             let mut ctx = tool_context.clone();
             ctx.provider = Some(context.provider.clone());
             ctx.model = Some(context.model.clone());
+            ctx.policy = policy.clone().map(Arc::new);
+            ctx.permission_handler = self.permission_handler.clone();
             if ctx.event_sender.is_none()
                 && let Some(ref sender) = stream_events
             {
@@ -450,6 +493,11 @@ impl AgentRuntime {
         // Track policy state if a policy is provided
         let mut remaining_budget_microusd = policy.as_ref().map(|p| p.remaining_budget_microusd);
 
+        // Initialize budget ledger for policy-based budget tracking
+        let budget_ledger = policy
+            .as_ref()
+            .map(|p| BudgetLedger::new(p.remaining_budget_microusd));
+
         loop {
             if cancellation.is_cancelled() {
                 let state = TurnState::Cancelled;
@@ -464,22 +512,71 @@ impl AgentRuntime {
                 .map(|m| m as usize)
                 .unwrap_or(self.limits.max_turns);
             if turn >= max_turns {
-                return Err(RuntimeError::BudgetExceeded);
+                // Check rollout mode for turn limit enforcement
+                let should_block = policy
+                    .as_ref()
+                    .is_none_or(|p| matches!(p.rollout_mode, RolloutMode::Enforce));
+
+                if should_block {
+                    tracing::warn!(turn, max_turns, "turn limit exceeded - stopping");
+                    return Err(RuntimeError::BudgetExceeded);
+                } else {
+                    // SoftFail or ObserveOnly: log and emit event, but continue
+                    let mode = policy.as_ref().map(|p| p.rollout_mode);
+                    tracing::warn!(
+                        turn,
+                        max_turns,
+                        ?mode,
+                        "turn limit exceeded - continuing due to rollout mode"
+                    );
+
+                    if let (Some(sender), Some(RolloutMode::SoftFail)) = (&stream_events, mode) {
+                        let _ =
+                            sender.send(StreamItem::PolicyEvent(PolicyStreamEvent::PolicyStop {
+                                reason: StopReason::MaxTurns,
+                            }));
+                    }
+                    // Continue execution despite violation
+                }
             }
             turn += 1;
-            // Deadline check before provider call
             if let Some(ref p) = policy
                 && let Some(deadline) = p.deadline
             {
                 let now = chrono::Utc::now();
                 if now >= deadline {
-                    tracing::warn!(
-                        turn,
-                        deadline = %deadline,
-                        now = %now,
-                        "deadline exceeded before provider call"
-                    );
-                    return Err(RuntimeError::BudgetExceeded);
+                    // Check rollout mode for deadline enforcement
+                    let should_block = matches!(p.rollout_mode, RolloutMode::Enforce);
+
+                    if should_block {
+                        tracing::warn!(
+                            turn,
+                            deadline = %deadline,
+                            now = %now,
+                            "deadline exceeded - stopping"
+                        );
+                        return Err(RuntimeError::BudgetExceeded);
+                    } else {
+                        // SoftFail or ObserveOnly: log and emit event, but continue
+                        tracing::warn!(
+                            turn,
+                            deadline = %deadline,
+                            now = %now,
+                            mode = ?p.rollout_mode,
+                            "deadline exceeded - continuing due to rollout mode"
+                        );
+
+                        if let (Some(sender), RolloutMode::SoftFail) =
+                            (&stream_events, p.rollout_mode)
+                        {
+                            let _ = sender.send(StreamItem::PolicyEvent(
+                                PolicyStreamEvent::PolicyStop {
+                                    reason: StopReason::MaxRuntimeExceeded,
+                                },
+                            ));
+                        }
+                        // Continue execution despite violation
+                    }
                 }
             }
 
@@ -500,6 +597,24 @@ impl AgentRuntime {
             self.maybe_trigger_rolling_summary(session_id, context)
                 .await?;
             let provider_context = self.prepare_provider_context(session_id, context).await?;
+
+            // Reserve budget before provider call if ledger is active
+            let budget_reservation = budget_ledger.as_ref().and_then(|ledger| {
+                // Estimate cost based on context size (simple heuristic)
+                let estimated_cost = provider_context.messages.len() as u64 * 10;
+                match ledger.reserve(estimated_cost) {
+                    Ok(reservation) => Some(reservation),
+                    Err(e) => {
+                        tracing::warn!(
+                            turn,
+                            requested = e.requested,
+                            remaining = e.remaining,
+                            "budget exhausted before provider call"
+                        );
+                        None
+                    }
+                }
+            });
             let provider_response = self
                 .request_provider_response(&provider_context, cancellation, stream_events.clone())
                 .await?;
@@ -534,8 +649,22 @@ impl AgentRuntime {
                     })
                     .unwrap_or(0);
 
+                // Settle the budget reservation with actual cost
+                if let Some(reservation) = budget_reservation {
+                    let diff = reservation.settle(turn_cost_microusd);
+                    tracing::debug!(
+                        turn,
+                        turn_cost = turn_cost_microusd,
+                        diff = diff,
+                        "budget reservation settled"
+                    );
+                }
+
                 // Update remaining budget
                 if let Some(ref mut remaining) = remaining_budget_microusd {
+                    let initial_budget = _p.initial_budget_microusd;
+                    let old_remaining = *remaining;
+
                     // Bounded overrun: allow the turn to complete even if budget is exceeded,
                     // but record the overrun. The turn that exceeds the budget is allowed
                     // to finish, but subsequent turns are blocked.
@@ -552,29 +681,86 @@ impl AgentRuntime {
                         );
                         *remaining = 0;
                     }
+
+                    if let Some(ref sender) = stream_events {
+                        let _ = sender.send(StreamItem::PolicyEvent(
+                            types::PolicyStreamEvent::BudgetUpdate {
+                                remaining: *remaining,
+                            },
+                        ));
+
+                        if initial_budget > 0 {
+                            let old_used_pct = 100
+                                - ((old_remaining as f64 / initial_budget as f64) * 100.0) as u8;
+                            let new_used_pct =
+                                100 - ((*remaining as f64 / initial_budget as f64) * 100.0) as u8;
+
+                            if old_used_pct < 80 && new_used_pct >= 80 {
+                                let _ = sender.send(StreamItem::PolicyEvent(
+                                    types::PolicyStreamEvent::BudgetWarning {
+                                        remaining: *remaining,
+                                        threshold_pct: 80,
+                                    },
+                                ));
+                            } else if old_used_pct < 95 && new_used_pct >= 95 {
+                                let _ = sender.send(StreamItem::PolicyEvent(
+                                    types::PolicyStreamEvent::BudgetWarning {
+                                        remaining: *remaining,
+                                        threshold_pct: 95,
+                                    },
+                                ));
+                            }
+                        }
+                    }
                 }
 
-                // Check if budget is exhausted (remaining == 0 means we've exceeded)
-                if remaining_budget_microusd == Some(0) {
-                    tracing::warn!(
-                        turn,
-                        "max budget exceeded - stopping after this turn"
-                    );
-                    // Return the response since this turn was allowed to complete
-                    // but indicate budget was exceeded
-                    context.messages.push(assistant_message.clone());
-                    self.persist_message_if_needed(
-                        session_id,
-                        &mut next_memory_sequence,
-                        &assistant_message,
-                    )
-                    .await?;
-                    return Ok(Response {
-                        message: assistant_message,
-                        tool_calls,
-                        finish_reason,
-                        usage,
-                    });
+                // Check if budget is exhausted using the ledger for authoritative state
+                let budget_exhausted = budget_ledger
+                    .as_ref()
+                    .map_or(remaining_budget_microusd == Some(0), |ledger| ledger.is_exhausted());
+                if budget_exhausted {
+                    // Check rollout mode for budget enforcement
+                    let should_block = policy
+                        .as_ref()
+                        .is_none_or(|p| matches!(p.rollout_mode, RolloutMode::Enforce));
+
+                    if should_block {
+                        tracing::warn!(turn, "max budget exceeded - stopping after this turn");
+                        // Return the response since this turn was allowed to complete
+                        // but indicate budget was exceeded
+                        context.messages.push(assistant_message.clone());
+                        self.persist_message_if_needed(
+                            session_id,
+                            &mut next_memory_sequence,
+                            &assistant_message,
+                        )
+                        .await?;
+                        return Ok(Response {
+                            message: assistant_message,
+                            tool_calls,
+                            finish_reason,
+                            usage,
+                        });
+                    } else {
+                        // SoftFail or ObserveOnly: log and emit event, but continue
+                        let mode = policy.as_ref().map(|p| p.rollout_mode);
+                        tracing::warn!(
+                            turn,
+                            ?mode,
+                            "max budget exceeded - continuing due to rollout mode"
+                        );
+
+                        if let (Some(sender), Some(RolloutMode::SoftFail)) = (&stream_events, mode)
+                        {
+                            let _ = sender.send(StreamItem::PolicyEvent(
+                                PolicyStreamEvent::PolicyStop {
+                                    reason: StopReason::MaxBudgetExceeded,
+                                },
+                            ));
+                        }
+                        // Continue to next turn despite violation
+                        // Don't return - let the loop continue
+                    }
                 }
             } else {
                 // No policy - use existing RuntimeLimits cost budget check
@@ -599,6 +785,10 @@ impl AgentRuntime {
                     usage,
                 });
             }
+
+            let mut turn_tool_context = tool_context.clone();
+            turn_tool_context.turn = Some(turn as u32);
+            turn_tool_context.remaining_budget = remaining_budget_microusd;
 
             let state = TurnState::ToolExecution;
             tracing::debug!(
@@ -673,7 +863,7 @@ impl AgentRuntime {
                 } else {
                     if !current_batch.is_empty() {
                         let futures = current_batch.drain(..).map(|tc| {
-                            self.execute_tool_and_format(tc, cancellation, &tool_context)
+                            self.execute_tool_and_format(tc, cancellation, &turn_tool_context)
                         });
                         let batch_results = futures::future::join_all(futures).await;
                         for result in batch_results {
@@ -699,7 +889,7 @@ impl AgentRuntime {
                     }
 
                     let result = self
-                        .execute_tool_and_format(tool_call, cancellation, &tool_context)
+                        .execute_tool_and_format(tool_call, cancellation, &turn_tool_context)
                         .await?;
                     context.messages.push(result.clone());
                     self.persist_message_if_needed(session_id, &mut next_memory_sequence, &result)
@@ -710,7 +900,7 @@ impl AgentRuntime {
             if !current_batch.is_empty() {
                 let futures = current_batch
                     .drain(..)
-                    .map(|tc| self.execute_tool_and_format(tc, cancellation, &tool_context));
+                    .map(|tc| self.execute_tool_and_format(tc, cancellation, &turn_tool_context));
                 let batch_results = futures::future::join_all(futures).await;
                 for result in batch_results {
                     let message = result?;

@@ -1,0 +1,54 @@
+Task 22: SDK Examples - Evidence of Completion
+==============================================
+
+Date: 2026-03-12
+Task: Create SDK Examples in crates/sdk/examples/
+
+Files Created
+-------------
+1. crates/sdk/examples/one_shot.rs
+   - Simple one-shot execution example
+   - Demonstrates basic SDK client usage
+   - Shows ClientConfig and OxydraClient builder pattern
+
+2. crates/sdk/examples/policy_enforcement.rs
+   - Budget and tool policy enforcement demo
+   - Demonstrates RunPolicyInput and ToolPolicyInput
+   - Shows policy configuration patterns
+
+3. crates/sdk/examples/streaming.rs
+   - Streaming with BudgetUpdate events
+   - Demonstrates RunEvent stream handling
+   - Shows real-time event processing patterns
+
+4. crates/sdk/examples/delegation_policy.rs
+   - Parent→child policy narrowing demo
+   - Demonstrates policy inheritance in delegation chains
+   - Shows strictest-wins semantics
+
+Build Verification
+------------------
+Command: cargo build --examples -p sdk
+Status: SUCCESS
+
+All 4 examples compile without errors.
+
+Example Usage
+-------------
+To run an example:
+  cargo run --example one_shot -p sdk
+  cargo run --example policy_enforcement -p sdk
+  cargo run --example streaming -p sdk
+  cargo run --example delegation_policy -p sdk
+
+Dependencies Added
+------------------
+- Added chrono as dev-dependency in crates/sdk/Cargo.toml
+  Required for delegation_policy.rs example to create EffectiveRunPolicy
+
+Notes
+-----
+- Examples are educational and demonstrate SDK API usage patterns
+- Examples use print statements to show output (no external services required)
+- All examples have inline documentation explaining the concepts
+- Examples compile successfully with cargo build --examples -p sdk

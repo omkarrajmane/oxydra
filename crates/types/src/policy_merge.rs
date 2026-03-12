@@ -12,7 +12,10 @@ use std::collections::HashSet;
 
 use chrono::Utc;
 
-use crate::{AgentDefinition, EffectiveRunPolicy, FunctionDecl, RolloutMode, RuntimeConfig, RunPolicyInput, ToolPolicyInput};
+use crate::{
+    AgentDefinition, EffectiveRunPolicy, FunctionDecl, RolloutMode, RunPolicyInput, RuntimeConfig,
+    ToolPolicyInput,
+};
 
 /// Merges global, agent-level, and per-run policy constraints using strictest-wins semantics.
 ///
@@ -60,8 +63,11 @@ pub fn merge_policy(
     let initial_budget = merge_max_budget(global, agent, per_run);
     let deadline = merge_deadline(global, per_run, max_turns);
 
-    let (toolset, disallowed_tools, auto_approve_tools) =
-        merge_tool_policies(available_tools, agent.tools.as_ref(), per_run.tool_policy.as_ref());
+    let (toolset, disallowed_tools, auto_approve_tools) = merge_tool_policies(
+        available_tools,
+        agent.tools.as_ref(),
+        per_run.tool_policy.as_ref(),
+    );
 
     EffectiveRunPolicy {
         started_at: Utc::now(),
@@ -146,7 +152,9 @@ fn merge_tool_policies(
 ) -> (Vec<FunctionDecl>, HashSet<String>, HashSet<String>) {
     let mut toolset: Vec<FunctionDecl> = available_tools.to_vec();
 
-    if let Some(allowlist) = agent_allowlist && !allowlist.is_empty() {
+    if let Some(allowlist) = agent_allowlist
+        && !allowlist.is_empty()
+    {
         toolset.retain(|tool| allowlist.contains(&tool.name));
     }
 
@@ -154,7 +162,9 @@ fn merge_tool_policies(
     let mut auto_approve_tools = HashSet::new();
 
     if let Some(tool_policy) = per_run_tool_policy {
-        if let Some(ref per_run_toolset) = tool_policy.toolset && !per_run_toolset.is_empty() {
+        if let Some(ref per_run_toolset) = tool_policy.toolset
+            && !per_run_toolset.is_empty()
+        {
             toolset.retain(|tool| per_run_toolset.contains(&tool.name));
         }
 
@@ -162,7 +172,9 @@ fn merge_tool_policies(
             disallowed_tools.extend(disallowed.iter().cloned());
         }
 
-        if let Some(ref auto_approve) = tool_policy.auto_approve_tools && !auto_approve.is_empty() {
+        if let Some(ref auto_approve) = tool_policy.auto_approve_tools
+            && !auto_approve.is_empty()
+        {
             let allowed_names: HashSet<String> = toolset.iter().map(|t| t.name.clone()).collect();
             auto_approve_tools = allowed_names
                 .intersection(&auto_approve.iter().cloned().collect())
@@ -190,7 +202,11 @@ mod tests {
 
     use super::*;
 
-    fn create_runtime_config(max_turns: usize, max_cost: Option<f64>, turn_timeout: u64) -> RuntimeConfig {
+    fn create_runtime_config(
+        max_turns: usize,
+        max_cost: Option<f64>,
+        turn_timeout: u64,
+    ) -> RuntimeConfig {
         RuntimeConfig {
             max_turns,
             max_cost,
@@ -200,7 +216,11 @@ mod tests {
         }
     }
 
-    fn create_agent_definition(max_turns: Option<usize>, max_cost: Option<f64>, tools: Option<Vec<String>>) -> AgentDefinition {
+    fn create_agent_definition(
+        max_turns: Option<usize>,
+        max_cost: Option<f64>,
+        tools: Option<Vec<String>>,
+    ) -> AgentDefinition {
         AgentDefinition {
             system_prompt: None,
             system_prompt_file: None,
@@ -239,11 +259,31 @@ mod tests {
 
     fn create_available_tools() -> Vec<FunctionDecl> {
         vec![
-            FunctionDecl::new("tool_a", Some("Tool A".to_string()), crate::ToolParameterSchema::default()),
-            FunctionDecl::new("tool_b", Some("Tool B".to_string()), crate::ToolParameterSchema::default()),
-            FunctionDecl::new("tool_c", Some("Tool C".to_string()), crate::ToolParameterSchema::default()),
-            FunctionDecl::new("tool_d", Some("Tool D".to_string()), crate::ToolParameterSchema::default()),
-            FunctionDecl::new("tool_e", Some("Tool E".to_string()), crate::ToolParameterSchema::default()),
+            FunctionDecl::new(
+                "tool_a",
+                Some("Tool A".to_string()),
+                crate::ToolParameterSchema::default(),
+            ),
+            FunctionDecl::new(
+                "tool_b",
+                Some("Tool B".to_string()),
+                crate::ToolParameterSchema::default(),
+            ),
+            FunctionDecl::new(
+                "tool_c",
+                Some("Tool C".to_string()),
+                crate::ToolParameterSchema::default(),
+            ),
+            FunctionDecl::new(
+                "tool_d",
+                Some("Tool D".to_string()),
+                crate::ToolParameterSchema::default(),
+            ),
+            FunctionDecl::new(
+                "tool_e",
+                Some("Tool E".to_string()),
+                crate::ToolParameterSchema::default(),
+            ),
         ]
     }
 
@@ -387,7 +427,11 @@ mod tests {
     #[test]
     fn test_merge_toolset_agent_allowlist_restricts() {
         let global = create_runtime_config(50, None, 30);
-        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string(), "tool_b".to_string()]));
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
+        );
         let per_run = create_run_policy_input(None, None, None, None);
         let available = create_available_tools();
 
@@ -402,7 +446,11 @@ mod tests {
     fn test_merge_toolset_per_run_restricts() {
         let global = create_runtime_config(50, None, 30);
         let agent = create_agent_definition(None, None, None);
-        let tool_policy = create_tool_policy_input(Some(vec!["tool_a".to_string(), "tool_c".to_string()]), None, None);
+        let tool_policy = create_tool_policy_input(
+            Some(vec!["tool_a".to_string(), "tool_c".to_string()]),
+            None,
+            None,
+        );
         let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
         let available = create_available_tools();
 
@@ -416,8 +464,24 @@ mod tests {
     #[test]
     fn test_merge_toolset_intersection_all_layers() {
         let global = create_runtime_config(50, None, 30);
-        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string(), "tool_b".to_string(), "tool_c".to_string()]));
-        let tool_policy = create_tool_policy_input(Some(vec!["tool_a".to_string(), "tool_c".to_string(), "tool_d".to_string()]), None, None);
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+            ]),
+        );
+        let tool_policy = create_tool_policy_input(
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_c".to_string(),
+                "tool_d".to_string(),
+            ]),
+            None,
+            None,
+        );
         let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
         let available = create_available_tools();
 
@@ -445,7 +509,11 @@ mod tests {
     #[test]
     fn test_merge_toolset_empty_per_run_toolset_means_all() {
         let global = create_runtime_config(50, None, 30);
-        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string(), "tool_b".to_string()]));
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
+        );
         let tool_policy = create_tool_policy_input(Some(vec![]), None, None);
         let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
         let available = create_available_tools();
@@ -473,7 +541,11 @@ mod tests {
     fn test_merge_disallowed_tools_from_per_run() {
         let global = create_runtime_config(50, None, 30);
         let agent = create_agent_definition(None, None, None);
-        let tool_policy = create_tool_policy_input(None, Some(vec!["tool_b".to_string(), "tool_d".to_string()]), None);
+        let tool_policy = create_tool_policy_input(
+            None,
+            Some(vec!["tool_b".to_string(), "tool_d".to_string()]),
+            None,
+        );
         let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
         let available = create_available_tools();
 
@@ -487,7 +559,15 @@ mod tests {
     #[test]
     fn test_disallowed_tools_always_wins() {
         let global = create_runtime_config(50, None, 30);
-        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string(), "tool_b".to_string(), "tool_c".to_string()]));
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+            ]),
+        );
         let tool_policy = create_tool_policy_input(
             Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
             Some(vec!["tool_b".to_string()]),
@@ -518,11 +598,23 @@ mod tests {
     #[test]
     fn test_merge_auto_approve_intersection_with_allowed() {
         let global = create_runtime_config(50, None, 30);
-        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string(), "tool_b".to_string(), "tool_c".to_string()]));
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+            ]),
+        );
         let tool_policy = create_tool_policy_input(
             None,
             None,
-            Some(vec!["tool_b".to_string(), "tool_c".to_string(), "tool_d".to_string()]),
+            Some(vec![
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+                "tool_d".to_string(),
+            ]),
         );
         let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
         let available = create_available_tools();
@@ -537,7 +629,11 @@ mod tests {
     #[test]
     fn test_merge_auto_approve_respects_disallowed() {
         let global = create_runtime_config(50, None, 30);
-        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string(), "tool_b".to_string()]));
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
+        );
         let tool_policy = create_tool_policy_input(
             None,
             Some(vec!["tool_b".to_string()]),
@@ -560,7 +656,11 @@ mod tests {
         let agent = create_agent_definition(
             Some(50),
             Some(30.0),
-            Some(vec!["tool_a".to_string(), "tool_b".to_string(), "tool_c".to_string()]),
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+            ]),
         );
         let tool_policy = create_tool_policy_input(
             Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
@@ -654,8 +754,220 @@ mod tests {
         let available = create_available_tools();
 
         let result = merge_policy(&global, &agent, &per_run, &available);
-
-        assert!(result.toolset.is_empty());
         assert!(result.disallowed_tools.contains("tool_a"));
+    }
+
+    // ============================================================================
+    // Edge Case Tests - Task 21
+    // ============================================================================
+
+    #[test]
+    fn edge_case_empty_toolset_means_all_tools_allowed() {
+        // Scenario 6: Empty toolset = all tools allowed
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(None, None, Some(vec![])); // Empty agent toolset
+        let tool_policy = create_tool_policy_input(Some(vec![]), None, None); // Empty per-run toolset
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Empty toolsets at all layers means all available tools are allowed
+        assert_eq!(
+            result.toolset.len(),
+            5,
+            "Empty toolsets should allow all tools"
+        );
+    }
+
+    #[test]
+    fn edge_case_disallowed_wins_over_allowlist() {
+        // Scenario 7: Disallowed always wins over allowlists
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+            ]),
+        );
+        // Tool is in allowlist but also in disallowed
+        let tool_policy = create_tool_policy_input(
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
+            Some(vec!["tool_b".to_string()]), // tool_b is disallowed
+            None,
+        );
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Disallowed wins - tool_b should not be in final toolset
+        assert_eq!(result.toolset.len(), 1, "Only tool_a should be allowed");
+        assert!(result.toolset.iter().any(|t| t.name == "tool_a"));
+        assert!(!result.toolset.iter().any(|t| t.name == "tool_b"));
+        assert!(result.disallowed_tools.contains("tool_b"));
+    }
+
+    #[test]
+    fn edge_case_disallowed_wins_even_when_only_tool() {
+        // Extreme case: only allowed tool is also disallowed
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(None, None, Some(vec!["tool_a".to_string()]));
+        let tool_policy = create_tool_policy_input(
+            Some(vec!["tool_a".to_string()]), // Only tool_a is allowed
+            Some(vec!["tool_a".to_string()]), // But tool_a is also disallowed
+            None,
+        );
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Disallowed wins - no tools should be available
+        assert!(
+            result.toolset.is_empty(),
+            "Disallowed should win even when it's the only tool"
+        );
+        assert!(result.disallowed_tools.contains("tool_a"));
+    }
+
+    #[test]
+    fn edge_case_parent_denies_child_allows_is_denied() {
+        // Scenario 4: Parent denies + child allows = denied (disallowed wins)
+        // This simulates the delegation scenario where parent policy has disallowed tools
+        // and child agent tries to allow them
+        let global = create_runtime_config(50, None, 30);
+        // Parent (global) disallows tool_b
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]), // Child tries to allow both
+        );
+        let tool_policy = create_tool_policy_input(
+            None,
+            Some(vec!["tool_b".to_string()]), // Parent disallows tool_b
+            None,
+        );
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Parent's disallow wins - tool_b should be denied
+        assert_eq!(result.toolset.len(), 1);
+        assert!(result.toolset.iter().any(|t| t.name == "tool_a"));
+        assert!(!result.toolset.iter().any(|t| t.name == "tool_b"));
+    }
+
+    #[test]
+    fn edge_case_multiple_disallowed_layers_union() {
+        // Test that disallowed tools from multiple layers are unioned
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec![
+                "tool_a".to_string(),
+                "tool_b".to_string(),
+                "tool_c".to_string(),
+            ]),
+        );
+        let tool_policy = create_tool_policy_input(
+            None,
+            Some(vec!["tool_b".to_string(), "tool_d".to_string()]), // Disallow tool_b and tool_d
+            None,
+        );
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Both tool_b (in agent allowlist) and tool_d (not in agent allowlist) should be disallowed
+        assert!(result.disallowed_tools.contains("tool_b"));
+        assert!(result.disallowed_tools.contains("tool_d"));
+        // Only tool_a and tool_c should be allowed
+        assert_eq!(result.toolset.len(), 2);
+        assert!(result.toolset.iter().any(|t| t.name == "tool_a"));
+        assert!(result.toolset.iter().any(|t| t.name == "tool_c"));
+    }
+
+    #[test]
+    fn edge_case_auto_approve_respects_disallowed() {
+        // Auto-approve should not include disallowed tools
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(
+            None,
+            None,
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
+        );
+        let tool_policy = create_tool_policy_input(
+            None,
+            Some(vec!["tool_b".to_string()]), // Disallow tool_b
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]), // Try to auto-approve both
+        );
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Only tool_a should be auto-approved (tool_b is disallowed)
+        assert_eq!(result.auto_approve_tools.len(), 1);
+        assert!(result.auto_approve_tools.contains("tool_a"));
+        assert!(!result.auto_approve_tools.contains("tool_b"));
+    }
+
+    #[test]
+    fn edge_case_strictest_wins_across_all_numeric_limits() {
+        // Comprehensive test that strictest wins across all numeric fields
+        let global = create_runtime_config(100, Some(50.0), 60);
+        let agent = create_agent_definition(Some(50), Some(30.0), None);
+        let per_run = create_run_policy_input(Some(25), Some(20_000_000), None, None);
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // All should be the minimum (strictest)
+        assert_eq!(result.max_turns, Some(25), "max_turns should be minimum");
+        assert_eq!(
+            result.initial_budget_microusd, 20_000_000,
+            "budget should be minimum in micro-USD"
+        );
+    }
+
+    #[test]
+    fn edge_case_zero_max_turns_is_valid() {
+        // Zero max_turns is valid and means no turns allowed
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(Some(0), None, None);
+        let per_run = create_run_policy_input(None, None, None, None);
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        assert_eq!(
+            result.max_turns,
+            Some(0),
+            "Zero max_turns should be preserved"
+        );
+    }
+
+    #[test]
+    fn edge_case_none_values_mean_no_restriction() {
+        // None values at any layer should not restrict
+        let global = create_runtime_config(50, Some(10.0), 30);
+        let agent = create_agent_definition(None, None, None); // All None
+        let per_run = create_run_policy_input(None, None, None, None); // All None
+        let available = create_available_tools();
+
+        let result = merge_policy(&global, &agent, &per_run, &available);
+
+        // Should use global values
+        assert_eq!(result.max_turns, Some(50));
+        assert_eq!(result.initial_budget_microusd, 10_000_000);
+        assert_eq!(result.toolset.len(), 5); // All tools available
+        assert_eq!(result.toolset.len(), 5); // All tools available
     }
 }

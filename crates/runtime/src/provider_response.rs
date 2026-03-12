@@ -134,6 +134,9 @@ impl AgentRuntime {
                     // Media events are emitted by tools (send_media), not by
                     // provider streams. Ignore if one somehow arrives here.
                 }
+                Ok(StreamItem::PolicyEvent(_)) => {
+                    // Policy events are handled by the runtime layer, not forwarded here
+                }
                 Err(error) => return Err(StreamCollectError::Provider(error)),
             }
         }

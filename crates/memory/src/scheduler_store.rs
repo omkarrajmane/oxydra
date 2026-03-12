@@ -575,6 +575,7 @@ fn schedule_from_row(row: &libsql::Row) -> Result<ScheduleDefinition, SchedulerE
         consecutive_failures: consecutive_failures as u32,
         channel_id,
         channel_context_id,
+        policy: None,
     })
 }
 

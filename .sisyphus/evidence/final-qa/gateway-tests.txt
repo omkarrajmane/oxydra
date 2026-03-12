@@ -1,0 +1,117 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Blocking waiting for file lock on artifact directory
+   Compiling tokio v1.50.0
+   Compiling tokio-util v0.7.18
+   Compiling tokio-io-timeout v1.2.1
+   Compiling tokio-stream v0.1.18
+   Compiling tower v0.5.3
+   Compiling tokio-rustls v0.26.4
+   Compiling tokio-rustls v0.25.0
+   Compiling wasmtime-wasi v42.0.1
+   Compiling tokio-tungstenite v0.28.0
+   Compiling tower-http v0.6.8
+   Compiling h2 v0.3.27
+   Compiling tower v0.4.13
+   Compiling h2 v0.4.13
+   Compiling types v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/types)
+   Compiling tower-http v0.4.4
+   Compiling hyper v0.14.32
+   Compiling hyper v1.8.1
+   Compiling hyper-util v0.1.20
+   Compiling hyper-rustls v0.27.7
+   Compiling axum v0.8.8
+   Compiling reqwest v0.13.2
+   Compiling hyper-timeout v0.4.1
+   Compiling axum v0.6.20
+   Compiling hyper-rustls v0.25.0
+   Compiling jsonschema v0.45.0
+   Compiling tonic v0.11.0
+   Compiling tonic-web v0.11.0
+   Compiling libsql_replication v0.9.29
+   Compiling libsql v0.9.29
+   Compiling memory v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/memory)
+   Compiling tools v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/tools)
+   Compiling runtime v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/runtime)
+   Compiling gateway v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/gateway)
+warning: field `effective_policy` is never read
+   --> crates/gateway/src/session.rs:103:16
+    |
+ 89 | pub struct SessionState {
+    |            ------------ field in this struct
+...
+103 |     pub(crate) effective_policy: Mutex<Option<EffectiveRunPolicy>>,
+    |                ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `set_effective_policy` and `get_effective_policy` are never used
+   --> crates/gateway/src/session.rs:138:25
+    |
+109 | impl SessionState {
+    | ----------------- methods in this implementation
+...
+138 |     pub(crate) async fn set_effective_policy(&self, policy: EffectiveRunPolicy) {
+    |                         ^^^^^^^^^^^^^^^^^^^^
+...
+144 |     pub(crate) async fn get_effective_policy(&self) -> Option<EffectiveRunPolicy> {
+    |                         ^^^^^^^^^^^^^^^^^^^^
+
+warning: `gateway` (lib) generated 2 warnings
+warning: `gateway` (lib test) generated 2 warnings (2 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 54s
+     Running unittests src/lib.rs (target/debug/deps/gateway-657a13a207d98d7c)
+
+running 42 tests
+test tests::internal_api_enforces_max_sessions_per_user ... ok
+test tests::handshake_rejects_unsupported_protocol_version ... ok
+test tests::create_new_session_creates_fresh_session_with_uuid ... ok
+test tests::default_session_backward_compat ... ok
+test tests::handshake_returns_hello_ack_with_stable_session ... ok
+test tests::cancel_all_active_turns_returns_error_when_idle ... ok
+test tests::health_check_includes_startup_status_when_gateway_has_bootstrap_state ... ok
+test tests::cancel_all_active_turns_cancels_all_user_sessions ... ok
+test tests::internal_api_get_existing_session_by_id ... ok
+test tests::internal_api_create_and_list_sessions ... ok
+test tests::send_turn_rejects_invalid_attachment_payload ... ok
+test tests::list_sessions_filters_subagent_sessions ... ok
+test tests::create_session_frame_creates_and_switches_to_new_session ... ok
+test tests::list_sessions_returns_user_sessions ... ok
+test tests::runner_failure_maps_to_gateway_error_frame ... ok
+test tests::session_cleanup_archives_stale_sessions_and_drops_context ... ok
+test tests::session_cleanup_skips_sessions_with_active_subscribers ... ok
+test tests::session_id_remains_stable_for_user ... ok
+test tests::session_persisted_to_store_on_creation ... ok
+test tests::evicted_session_can_be_resumed_and_used_again ... ok
+test tests::queued_turn_waits_for_available_permit ... ok
+test tests::create_session_with_agent_name_routes_turn_with_that_agent ... ok
+test tests::validate_inline_attachments_rejects_invalid_mime ... ok
+test tests::validate_inline_attachments_rejects_oversized_file ... ok
+test tests::validate_inline_attachments_rejects_too_many ... ok
+test turn_runner::tests::augment_prompt_strips_control_characters_from_mime_type ... ok
+test turn_runner::tests::augment_prompt_truncates_long_mime_type ... ok
+test turn_runner::tests::augment_prompt_uses_singular_noun_for_single_attachment ... ok
+test turn_runner::tests::augment_prompt_with_attachment_metadata_is_noop_without_attachments ... ok
+test turn_runner::tests::augment_prompt_with_attachment_metadata_appends_attachment_instructions ... ok
+test tests::session_id_in_hello_joins_existing_session ... ok
+test tests::switch_to_nonexistent_session_returns_error ... ok
+test tests::switch_session_supports_prefix_matching ... ok
+test tests::switch_session_changes_active_session ... ok
+test tests::cancel_active_turn_ignores_turn_id_mismatch ... ok
+test tests::two_tui_windows_with_separate_sessions_work_independently ... ok
+test tests::cancel_active_turn_cancels_only_current_turn ... ok
+test tests::send_turn_streams_deltas_and_completes ... ok
+test tests::touch_session_called_on_turn_completion ... ok
+test tests::reconnect_after_disconnected_completion_receives_terminal_outcome ... ok
+test tests::reconnect_during_active_turn_reports_running_and_continues_streaming ... ok
+test tests::two_sessions_for_same_user_run_turns_concurrently ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+   Doc-tests gateway
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

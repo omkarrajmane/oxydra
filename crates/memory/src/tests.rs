@@ -1995,6 +1995,7 @@ async fn scheduler_store_create_get_roundtrip() {
         consecutive_failures: 0,
         channel_id: None,
         channel_context_id: None,
+        policy: None,
     };
     store
         .create_schedule(&def)
@@ -2046,6 +2047,7 @@ async fn scheduler_store_count_and_limit() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         };
         store.create_schedule(&def).await.expect("create");
     }
@@ -2096,6 +2098,7 @@ async fn scheduler_store_search_with_filters() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         },
         ScheduleDefinition {
             schedule_id: "s2".to_owned(),
@@ -2113,6 +2116,7 @@ async fn scheduler_store_search_with_filters() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         },
     ];
     for s in &schedules {
@@ -2197,6 +2201,7 @@ async fn scheduler_store_delete_cascades_runs() {
         consecutive_failures: 0,
         channel_id: None,
         channel_context_id: None,
+        policy: None,
     };
     store.create_schedule(&def).await.expect("create");
 
@@ -2272,6 +2277,7 @@ async fn scheduler_store_update_pause_resume() {
         consecutive_failures: 0,
         channel_id: None,
         channel_context_id: None,
+        policy: None,
     };
     store.create_schedule(&def).await.expect("create");
 
@@ -2343,6 +2349,7 @@ async fn scheduler_store_due_schedules_filters_correctly() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         })
         .await
         .expect("create due");
@@ -2365,6 +2372,7 @@ async fn scheduler_store_due_schedules_filters_correctly() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         })
         .await
         .expect("create future");
@@ -2387,6 +2395,7 @@ async fn scheduler_store_due_schedules_filters_correctly() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         })
         .await
         .expect("create paused");
@@ -2435,6 +2444,7 @@ async fn scheduler_store_record_run_and_prune_history() {
             consecutive_failures: 0,
             channel_id: None,
             channel_context_id: None,
+            policy: None,
         })
         .await
         .expect("create");

@@ -8,11 +8,12 @@ use memory_crate::cadence::next_run_for_cadence;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 use types::{
-    GatewayScheduledNotification, GatewayServerFrame, NotificationPolicy, ScheduleCadence,
+    AgentDefinition, EffectiveRunPolicy, FunctionDecl, GatewayScheduledNotification,
+    GatewayServerFrame, NotificationPolicy, RunPolicyInput, RuntimeConfig, ScheduleCadence,
     ScheduleDefinition, ScheduleRunRecord, ScheduleRunStatus, ScheduleStatus, SchedulerConfig,
 };
 
-use crate::ScheduledTurnRunner;
+use crate::{ScheduledTurnRunner, policy_guard};
 
 /// Callback trait for publishing scheduled notifications to connected users.
 #[async_trait]
@@ -105,9 +106,18 @@ impl SchedulerExecutor {
 
         let child_cancellation = self.cancellation.child_token();
 
+        // Resolve policy from schedule configuration
+        let policy = self.resolve_schedule_policy(&schedule).await;
+
         let result = self
             .turn_runner
-            .run_scheduled_turn(&schedule.user_id, &session_id, prompt, child_cancellation)
+            .run_scheduled_turn(
+                &schedule.user_id,
+                &session_id,
+                prompt,
+                child_cancellation,
+                policy,
+            )
             .await;
 
         let finished_at = Utc::now().to_rfc3339();
@@ -330,6 +340,98 @@ impl SchedulerExecutor {
                     "failed to compute next run; disabling schedule"
                 );
                 (None, Some(ScheduleStatus::Disabled))
+            }
+        }
+    }
+
+    /// Resolves the effective run policy for a scheduled execution.
+    ///
+    /// This combines the global SchedulerConfig limits with any per-schedule
+    /// policy overrides using strictest-wins semantics (minimum for limits,
+    /// intersection for tools).
+    async fn resolve_schedule_policy(
+        &self,
+        schedule: &ScheduleDefinition,
+    ) -> Option<EffectiveRunPolicy> {
+        // If no per-schedule policy is defined, use SchedulerConfig defaults
+        let per_run = schedule.policy.clone().unwrap_or_default();
+
+        // Build RuntimeConfig from SchedulerConfig (global limits)
+        let global_config = RuntimeConfig {
+            turn_timeout_secs: 60, // Default turn timeout
+            max_turns: self.config.max_turns,
+            max_cost: Some(self.config.max_cost),
+            context_budget: Default::default(),
+            summarization: Default::default(),
+        };
+
+        // Use empty agent definition (schedules run as default agent)
+        let agent_def = AgentDefinition {
+            system_prompt: None,
+            system_prompt_file: None,
+            selection: None,
+            tools: None,
+            max_turns: None,
+            max_cost: None,
+        };
+
+        // Get available tools from turn_runner if possible
+        // For now, use empty tool list - the runtime will provide actual tools
+        let available_tools: Vec<FunctionDecl> = Vec::new();
+
+        // Merge schedule policy with SchedulerConfig using strictest-wins
+        let merged_per_run = RunPolicyInput {
+            max_turns: per_run
+                .max_turns
+                .map(|t| t.min(self.config.max_turns))
+                .or(Some(self.config.max_turns)),
+            max_budget_microusd: per_run.max_budget_microusd.or(
+                (self.config.max_cost > 0.0).then_some((self.config.max_cost * 1_000_000.0) as u64)
+            ),
+            max_runtime: per_run.max_runtime,
+            tool_policy: per_run.tool_policy.clone(),
+        };
+
+        // Resolve the policy
+        match policy_guard::resolve_policy(
+            &global_config,
+            &agent_def,
+            &merged_per_run,
+            &available_tools,
+        ) {
+            Ok(policy) => {
+                tracing::debug!(
+                    schedule_id = %schedule.schedule_id,
+                    max_turns = ?policy.max_turns,
+                    budget = policy.initial_budget_microusd,
+                    "resolved schedule policy"
+                );
+                Some(policy)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    schedule_id = %schedule.schedule_id,
+                    error = %e,
+                    "failed to resolve schedule policy, using defaults"
+                );
+                // Fall back to SchedulerConfig defaults
+                let fallback_per_run = RunPolicyInput {
+                    max_turns: Some(self.config.max_turns),
+                    max_budget_microusd: if self.config.max_cost > 0.0 {
+                        Some((self.config.max_cost * 1_000_000.0) as u64)
+                    } else {
+                        None
+                    },
+                    max_runtime: None,
+                    tool_policy: None,
+                };
+                policy_guard::resolve_policy(
+                    &global_config,
+                    &agent_def,
+                    &fallback_per_run,
+                    &available_tools,
+                )
+                .ok()
             }
         }
     }

@@ -1,0 +1,358 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Blocking waiting for file lock on artifact directory
+   Compiling wasmtime-internal-cache v42.0.1
+   Compiling wasmtime-internal-fiber v42.0.1
+   Compiling reqwest v0.13.2
+   Compiling memory v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/memory)
+   Compiling hyperlocal v0.9.1
+   Compiling bollard v0.20.1
+   Compiling wasmtime v42.0.1
+   Compiling jsonschema v0.45.0
+   Compiling frankenstein v0.48.0
+   Compiling provider v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/provider)
+   Compiling wiggle v42.0.1
+   Compiling wasmtime-wasi-io v42.0.1
+   Compiling wasmtime-wasi v42.0.1
+   Compiling tools v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/tools)
+   Compiling runtime v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/runtime)
+   Compiling gateway v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/gateway)
+warning: field `effective_policy` is never read
+   --> crates/gateway/src/session.rs:103:16
+    |
+ 89 | pub struct SessionState {
+    |            ------------ field in this struct
+...
+103 |     pub(crate) effective_policy: Mutex<Option<EffectiveRunPolicy>>,
+    |                ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `set_effective_policy` and `get_effective_policy` are never used
+   --> crates/gateway/src/session.rs:138:25
+    |
+109 | impl SessionState {
+    | ----------------- methods in this implementation
+...
+138 |     pub(crate) async fn set_effective_policy(&self, policy: EffectiveRunPolicy) {
+    |                         ^^^^^^^^^^^^^^^^^^^^
+...
+144 |     pub(crate) async fn get_effective_policy(&self) -> Option<EffectiveRunPolicy> {
+    |                         ^^^^^^^^^^^^^^^^^^^^
+
+   Compiling channels v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/channels)
+warning: `gateway` (lib) generated 2 warnings
+   Compiling runner v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/runner)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 28s
+     Running unittests src/lib.rs (target/debug/deps/runner-39eb4d02a5538f87)
+
+running 290 tests
+test bootstrap::tests::apply_web_search_config_resolves_google_api_key_via_indirection ... ok
+test bootstrap::tests::apply_web_search_config_sets_provider_and_base_url_env_vars ... ok
+test bootstrap::tests::build_system_prompt_contains_anti_patterns ... ok
+test bootstrap::tests::build_system_prompt_contains_agent_identity_framing ... ok
+test bootstrap::tests::build_system_prompt_closing_reminder_at_end ... ok
+test bootstrap::tests::build_system_prompt_contains_example_turn ... ok
+test bootstrap::tests::apply_web_search_config_sets_searxng_specific_fields ... ok
+test bootstrap::tests::apply_web_search_config_does_not_override_existing_env_vars ... ok
+test bootstrap::tests::build_system_prompt_contains_memory_save_triggers ... ok
+test bootstrap::tests::build_system_prompt_contains_pre_action_requirement ... ok
+test bootstrap::tests::build_system_prompt_includes_memory_guidance_when_memory_is_enabled ... ok
+test bootstrap::tests::build_memory_backend_returns_none_when_memory_is_disabled ... ok
+test bootstrap::tests::build_system_prompt_includes_skills_note_when_provided ... ok
+test bootstrap::tests::build_system_prompt_omits_memory_guidance_when_memory_is_disabled ... ok
+test bootstrap::tests::build_system_prompt_omits_skills_section_when_empty ... ok
+test bootstrap::tests::build_system_prompt_operational_loop_contains_all_phases ... ok
+test bootstrap::tests::build_system_prompt_retry_protocol_mentions_distinct_attempts_and_escalation ... ok
+test bootstrap::tests::build_system_prompt_scratchpad_has_usage_threshold ... ok
+test bootstrap::tests::build_system_prompt_user_ask_boundary_is_restrictive ... ok
+test bootstrap::tests::build_system_prompt_includes_specialist_agent_note ... ok
+test bootstrap::tests::openai_responses_provider_uses_openai_catalog ... ok
+test bootstrap::tests::deprecated_model_emits_warning ... ok
+test bootstrap::tests::full_bootstrap_with_registry_config ... ok
+test bootstrap::tests::runtime_limits_maps_budget_retrieval_and_summarization_settings ... ok
+test bootstrap::tests::load_agent_config_applies_profile_overrides ... ok
+test catalog::tests::filter_catalog_with_empty_provider_list_yields_empty_catalog ... ok
+test catalog::tests::canonicalize_json_ends_with_newline ... ok
+test catalog::tests::filter_excludes_non_configured_providers ... ok
+test catalog::tests::filter_to_default_providers_excludes_mistral ... ok
+test catalog::tests::load_overrides_returns_default_when_file_missing ... ok
+test catalog::tests::regenerate_snapshot_is_deterministic ... ok
+test catalog::tests::overlay_preserves_existing_overrides ... ok
+test catalog::tests::verify_detects_drift ... ok
+test bootstrap::tests::load_agent_config_honors_file_env_and_cli_precedence ... ok
+test bootstrap::tests::load_agent_config_maps_nested_env_keys ... ok
+test skills::tests::actual_browser_skill_content_within_token_cap_and_has_key_sections ... ok
+test skills::tests::actual_browser_skill_appears_in_formatted_prompt ... ok
+test skills::tests::actual_browser_skill_absent_from_prompt_without_pinchtab_url ... ok
+test skills::tests::actual_browser_skill_parses_with_correct_metadata ... ok
+test skills::tests::actual_browser_skill_discovers_and_activates ... ok
+test bootstrap::tests::load_agent_config_parses_tools_web_search_section ... ok
+test skills::tests::actual_browser_skill_does_not_activate_without_shell ... ok
+test skills::tests::actual_browser_skill_renders_with_pinchtab_url_substituted ... ok
+test skills::tests::browser_skill_activates_when_shell_ready_and_pinchtab_url_set ... ok
+test bootstrap::tests::load_agent_config_rejects_remote_memory_without_auth_token ... ok
+test skills::tests::browser_skill_inactive_when_pinchtab_url_missing ... ok
+test skills::tests::browser_skill_inactive_when_shell_unavailable ... ok
+test skills::tests::browser_skill_renders_pinchtab_url ... ok
+test bootstrap::tests::load_agent_config_rejects_unsupported_config_version ... ok
+test skills::tests::discover_skills_finds_folder_based_skill ... ok
+test skills::tests::discover_skills_finds_files_in_system_dir ... ok
+test skills::tests::discover_skills_folder_in_workspace_overrides_folder_in_system ... ok
+test skills::tests::discover_skills_ignores_folder_without_skill_md ... ok
+test skills::tests::discover_skills_folder_skill_overrides_bare_file_with_same_name ... ok
+test skills::tests::discover_skills_ignores_non_md_files ... ok
+test skills::tests::discover_skills_sorts_by_priority ... ok
+test bootstrap::tests::provider_type_model_mismatch_rejected ... ok
+test skills::tests::discover_skills_folder_with_references_is_found ... ok
+test skills::tests::discover_skills_mixes_folder_and_bare_file_skills ... ok
+test skills::tests::discover_skills_workspace_overrides_system ... ok
+test skills::tests::embedded_skills_found_with_empty_filesystem_dirs ... ok
+test skills::tests::embedded_skills_include_browser_automation ... ok
+test skills::tests::discover_skills_workspace_overrides_user_overrides_system ... ok
+test skills::tests::evaluate_activation_auto_skill_activates_when_conditions_met ... ok
+test skills::tests::evaluate_activation_always_skill_is_active_regardless ... ok
+test skills::tests::evaluate_activation_auto_skill_inactive_when_env_missing ... ok
+test skills::tests::evaluate_activation_auto_skill_inactive_when_tool_not_ready ... ok
+test catalog::tests::show_does_not_panic_on_committed_snapshot ... ok
+test skills::tests::evaluate_activation_manual_skill_is_never_auto_active ... ok
+test skills::tests::filesystem_skill_overrides_embedded_builtin ... ok
+test skills::tests::evaluate_activation_does_not_activate_when_shell_registered_but_unavailable ... ok
+test skills::tests::extract_builtin_references_is_idempotent ... ok
+test skills::tests::format_skills_prompt_empty_when_no_skills ... ok
+test skills::tests::format_skills_prompt_contains_header_and_content ... ok
+test skills::tests::evaluate_activation_shell_ready_but_browser_required_and_unavailable ... ok
+test skills::tests::parse_skill_file_allows_body_at_token_cap ... ok
+test skills::tests::format_skills_prompt_includes_multiple_skills ... ok
+test skills::tests::parse_skill_file_enforces_token_cap ... ok
+test skills::tests::load_and_render_skills_end_to_end ... ok
+test skills::tests::extract_builtin_references_writes_to_shared_dir ... ok
+test skills::tests::parse_skill_file_rejects_missing_frontmatter ... ok
+test skills::tests::load_and_render_skills_returns_empty_when_no_skills_found ... ok
+test tests::apply_browser_shell_overlay_adds_required_commands ... ok
+test tests::apply_browser_shell_overlay_does_not_duplicate_existing_commands ... ok
+test skills::tests::parse_skill_file_supports_env_alias ... ok
+test skills::tests::parse_skill_file_extracts_metadata_and_content ... ok
+test skills::tests::render_skill_substitutes_env_vars ... ok
+test skills::tests::parse_skill_file_rejects_missing_required_fields ... ok
+test skills::tests::parse_skill_file_uses_defaults_for_optional_fields ... ok
+test skills::tests::render_skill_leaves_unknown_placeholders_intact ... ok
+test tests::apply_browser_shell_overlay_preserves_existing_deny_and_replace_defaults ... ok
+test tests::build_browser_env_returns_expected_vars ... ok
+test tests::browser_config_in_bootstrap_envelope_round_trips ... ok
+test tests::configured_timezone_is_forwarded_to_both_guests ... ok
+test tests::container_tier_launch_request_includes_extra_env ... ok
+test tests::container_tier_launch_request_includes_bootstrap_file ... ok
+test tests::cli_timezone_env_is_forwarded_to_shell_env_without_shell_prefix ... ok
+test tests::control_logs_returns_empty_after_shutdown ... ok
+test tests::control_logs_respects_tail_limit ... ok
+test tests::bootstrap_file_written_with_correct_content_for_non_process_tier ... ok
+test tests::extract_socket_path_handles_nested_payload ... ok
+test tests::extract_timestamp_parses_docker_timestamp ... ok
+test tests::discover_skills_includes_embedded_builtins ... ok
+test tests::copy_agent_config_to_workspace_materializes_merged_config ... ok
+test tests::control_logs_filters_by_stream ... ok
+test tests::extract_timestamp_returns_none_for_plain_text ... ok
+test tests::find_available_port_returns_some_port_in_range ... ok
+test tests::firecracker_config_injects_bootstrap_into_boot_args ... ok
+test tests::firecracker_config_rejects_oversized_bootstrap ... ok
+test tests::extract_builtin_references_writes_embedded_reference_files ... ok
+test tests::generate_bridge_token_produces_hex_string ... ok
+test tests::firecracker_config_without_bootstrap_copies_template ... ok
+test tests::control_logs_returns_entries_from_process_log_files ... ok
+test tests::legacy_browser_cdp_url_in_user_behavior_is_rejected ... ok
+test tests::generate_bridge_token_produces_unique_values ... ok
+test tests::global_and_user_configs_load_with_validation ... ok
+test tests::loading_legacy_runner_global_config_auto_migrates_and_creates_backup ... ok
+test tests::loading_legacy_runner_user_config_auto_migrates_and_creates_backup ... ok
+test bootstrap::tests::provider_factory_switches_by_config_selection ... ok
+test tests::microvm_tier_launch_request_includes_bootstrap_file ... ok
+test tests::parse_since_threshold_handles_duration_shorthand ... ok
+test tests::parse_since_threshold_handles_rfc3339 ... ok
+test tests::parse_since_threshold_returns_none_for_empty ... ok
+test tests::parse_since_threshold_returns_none_for_invalid ... ok
+test tests::control_logs_warns_when_sidecar_unavailable ... ok
+test tests::health_check_includes_log_dir_and_metadata ... ok
+test tests::requested_capabilities_apply_agent_defaults_before_user_overrides ... ok
+test tests::read_log_file_tail_returns_last_n_lines ... ok
+test tests::read_log_file_tail_with_since_filter ... ok
+test tests::process_tier_launch_request_has_no_bootstrap_file ... ok
+test tests::read_log_file_tail_skips_empty_lines ... ok
+test tests::runner_control_rejects_shutdown_for_unknown_user ... ok
+test tests::sandbox_tier_resolution_honors_insecure_override ... ok
+test tests::send_control_to_daemon_reports_connection_refused_for_missing_socket ... ok
+test tests::shell_prefixed_env_vars_forwarded_to_shell_env_with_prefix_stripped ... ok
+test tests::startup_container_tier_uses_unix_sidecar_transport ... ok
+test tests::startup_insecure_process_mode_disables_shell_and_browser ... ok
+test tests::runner_resolves_relative_user_config_paths ... ok
+test tests::serve_control_unix_listener_exits_after_shutdown ... ok
+test tests::runner_control_transport_handles_health_shutdown_and_invalid_frames ... ok
+test tests::startup_process_tier_never_provisions_browser ... ok
+test tests::startup_applies_mount_resource_and_credential_overrides_to_launch_and_bootstrap ... ok
+test tests::strip_timestamp_preserves_plain_text ... ok
+test tests::strip_timestamp_removes_docker_timestamp ... ok
+test tests::send_control_to_daemon_receives_health_response ... ok
+test tests::system_time_to_rfc3339_formats_unix_epoch ... ok
+test tests::startup_rejects_microvm_on_unsupported_host ... ok
+test tests::startup_uses_linux_microvm_backend_and_vsock_sidecar ... ok
+test tests::startup_uses_macos_microvm_backend_with_unix_sidecar ... ok
+test tests::startup_with_browser_disabled_has_no_browser_config ... ok
+test tests::tui_connect_only_never_spawns_guest_when_probe_fails ... ok
+test tests::workspace_skill_overrides_embedded_builtin ... ok
+test tests::workspace_control_socket_path_uses_runner_constant ... ok
+test tests::workspace_provisioning_creates_expected_directories ... ok
+test tests::tui_connect_only_fails_with_clear_error_when_guest_is_absent ... ok
+test web::catalog_api::tests::catalog_source_info_returns_string ... ok
+test tests::startup_with_browser_enabled_populates_browser_env_in_shell_vm ... ok
+test web::catalog_api::tests::catalog_to_response_converts_correctly ... ok
+test web::catalog_api::tests::catalog_to_response_handles_empty_catalog ... ok
+test web::catalog_api::tests::catalog_to_response_handles_multiple_providers ... ok
+test web::catalog_api::tests::catalog_to_response_includes_all_model_fields ... ok
+test tests::tui_connect_only_succeeds_against_running_gateway_endpoint ... ok
+test web::config_read::tests::get_agent_config_returns_defaults_when_missing ... ok
+test web::config_read::tests::get_runner_config_returns_defaults_when_file_missing ... ok
+test web::config_read::tests::get_runner_config_returns_file_contents ... ok
+test web::config_read::tests::get_user_config_returns_not_found_for_unknown_user ... ok
+test web::config_read::tests::list_users_returns_registered_users ... ok
+test web::catalog_api::tests::load_resolved_catalog_returns_some_data ... ok
+test web::catalog_api::tests::catalog_status_endpoint_returns_source_info ... ok
+test web::config_write::tests::atomic_write_creates_parent_directories ... ok
+test web::config_write::tests::changed_fields_array_length_difference ... ok
+test web::config_write::tests::changed_fields_identical_returns_empty ... ok
+test web::config_write::tests::changed_fields_include_nested_paths ... ok
+test web::config_write::tests::changed_fields_removed_key ... ok
+test web::config_write::tests::changed_fields_type_change ... ok
+test web::config_write::tests::atomic_write_no_stale_temp_files ... ok
+test web::config_write::tests::backup_file_creates_timestamped_copy ... ok
+test web::catalog_api::tests::catalog_status_has_nonzero_counts_from_pinned ... ok
+test web::config_write::tests::delete_nonexistent_user_returns_404 ... ok
+test web::config_write::tests::merge_patch_adds_new_keys ... ok
+test web::config_write::tests::merge_patch_creates_nested_tables ... ok
+test web::config_write::tests::merge_patch_handles_array_values ... ok
+test web::config_write::tests::merge_patch_preserves_comments_and_secret_sentinel ... ok
+test web::config_write::tests::merge_patch_preserves_inline_comments_on_unchanged_lines ... ok
+test web::config_write::tests::merge_patch_rejects_non_object_root ... ok
+test web::config_write::tests::merge_patch_removes_null_keys ... ok
+test web::config_write::tests::atomic_write_overwrites_existing ... ok
+test web::catalog_api::tests::catalog_endpoint_returns_model_details ... ok
+test web::config_write::tests::patch_nonexistent_user_returns_404 ... ok
+test web::config_write::tests::config_roundtrip_preserves_values ... ok
+test web::catalog_api::tests::catalog_endpoint_returns_provider_data ... ok
+test bootstrap::tests::bootstrap_rejects_unknown_model_in_agent_selection ... ok
+test web::config_write::tests::patch_runner_config_creates_file_when_missing ... ok
+test web::config_write::tests::patch_returns_changed_fields ... ok
+test web::config_write::tests::prune_backups_no_op_when_fewer_than_limit ... ok
+test web::config_write::tests::validate_user_id_accepts_normal_names ... ok
+test web::config_write::tests::validate_agent_config_accepts_valid_patch ... ok
+test web::config_write::tests::validate_user_id_rejects_empty ... ok
+test web::config_write::tests::create_user_rejects_duplicate ... ok
+test web::config_write::tests::validate_user_id_rejects_path_traversal ... ok
+test web::config_write::tests::create_and_delete_user_roundtrip ... ok
+test web::config_write::tests::patch_runner_config_creates_backup ... ok
+test web::control::tests::start_returns_not_found_for_unknown_user ... ok
+test web::control::tests::stop_returns_daemon_not_running_when_socket_missing ... ok
+test web::control::tests::restart_returns_not_found_for_unknown_user ... ok
+test web::logs::tests::logs_reject_invalid_stream_query ... ok
+test web::masking::tests::deeply_nested_secrets_masked ... ok
+test web::config_write::tests::validate_agent_config_rejects_invalid_runtime_limits ... ok
+test web::masking::tests::does_not_mask_empty_secrets ... ok
+test web::masking::tests::does_not_mask_non_string_values ... ok
+test web::masking::tests::does_not_mask_non_secret_fields ... ok
+test web::masking::tests::masks_credential_refs ... ok
+test web::masking::tests::handles_missing_paths_gracefully ... ok
+test web::masking::tests::masks_memory_auth_token ... ok
+test web::masking::tests::masks_multiple_credential_refs ... ok
+test web::masking::tests::masks_provider_api_keys ... ok
+test web::masking::tests::masks_web_auth_token ... ok
+test web::middleware::tests::constant_time_eq_empty_strings_are_equal ... ok
+test web::middleware::tests::constant_time_eq_detects_equal_and_unequal_values ... ok
+test web::middleware::tests::constant_time_eq_rejects_different_lengths ... ok
+test web::middleware::tests::constant_time_eq_rejects_prefix_match ... ok
+test web::schema::tests::agent_schema_covers_all_agent_config_field_paths ... ok
+test web::schema::tests::agent_schema_has_all_sections ... ok
+test web::schema::tests::agent_sections_have_group_assignments ... ok
+test web::logs::tests::logs_returns_not_found_for_unknown_user ... ok
+test web::schema::tests::all_fields_have_labels_and_descriptions ... ok
+test web::schema::tests::collection_sections_have_metadata ... ok
+test web::schema::tests::auth_modes_match_rust_enum ... ok
+test web::schema::tests::dynamic_sources_include_all_enum_sets ... ok
+test web::schema::tests::dynamic_sources_include_registered_providers ... ok
+test web::schema::tests::dynamic_sources_include_tool_names ... ok
+test web::schema::tests::dynamic_sources_tool_names_match_canonical ... ok
+test web::schema::tests::memory_and_telegram_schema_defaults_match_runtime_requirements ... ok
+test web::schema::tests::embedding_backends_match_rust_enum ... ok
+test web::schema::tests::nullable_fields_in_providers_advanced_overrides ... ok
+test web::schema::tests::model2vec_models_match_rust_enum ... ok
+test web::schema::tests::nullable_fields_in_runner_guest_images ... ok
+test web::schema::tests::nullable_fields_in_user_behavior ... ok
+test web::schema::tests::nullable_fields_in_user_resources ... ok
+test web::schema::tests::nullable_fields_present_for_optional_types ... ok
+test web::schema::tests::number_fields_with_constraints_have_valid_ranges ... ok
+test web::schema::tests::optional_sections_marked_correctly ... ok
+test web::schema::tests::runner_schema_covers_all_runner_config_field_paths ... ok
+test web::schema::tests::runner_schema_has_all_sections ... ok
+test web::schema::tests::provider_types_match_rust_enum ... ok
+test web::schema::tests::sandbox_tiers_match_rust_enum ... ok
+test web::schema::tests::schema_endpoint_returns_all_config_types ... ok
+test web::schema::tests::schema_omits_empty_optional_fields ... ok
+test web::schema::tests::schema_endpoint_returns_correct_field_metadata ... ok
+test web::schema::tests::select_fields_have_enum_options_or_dynamic_source ... ok
+test web::schema::tests::user_schema_covers_all_user_config_field_paths ... ok
+test web::schema::tests::user_schema_has_all_sections ... ok
+test web::state::tests::host_matching_is_case_insensitive ... ok
+test web::state::tests::host_matching_trims_whitespace ... ok
+test web::state::tests::loopback_bind_accepts_ip_header ... ok
+test web::state::tests::loopback_bind_accepts_localhost_header ... ok
+test web::state::tests::loopback_bind_rejects_arbitrary_hostname ... ok
+test web::state::tests::loopback_bind_rejects_external_ip_header ... ok
+test web::onboarding::tests::onboarding_needs_setup_when_fresh ... ok
+test web::state::tests::wildcard_bind_accepts_external_ip_header ... ok
+test web::state::tests::wildcard_bind_accepts_literal_0000_header ... ok
+test web::state::tests::wildcard_bind_accepts_local_hostname_alias ... ok
+test web::state::tests::wildcard_bind_accepts_localhost_header ... ok
+test web::state::tests::wildcard_bind_accepts_loopback_ip_header ... ok
+test web::state::tests::wildcard_bind_rejects_arbitrary_hostname_header ... ok
+test web::state::tests::wildcard_bind_rejects_wrong_port ... ok
+test web::onboarding::tests::onboarding_reports_partial_setup ... ok
+test web::onboarding::tests::onboarding_detects_existing_config ... ok
+test web::tests::arm_low_power_heuristic_requires_arm_and_small_memory ... ok
+test web::logs::tests::logs_fall_back_to_workspace_files ... ok
+test web::config_write::tests::rename_user_moves_registration_and_file ... ok
+test web::status::tests::status_shows_no_users_when_empty ... ok
+test web::tests::content_type_layer_rejects_non_json_mutation ... ok
+test web::schema::tests::schema_serializes_to_json_without_error ... ok
+test web::status::tests::user_status_returns_not_found_for_unknown ... ok
+test web::tests::text_contains_raspberry_pi_detects_marker ... ok
+test web::tests::parse_linux_memtotal_mib_parses_value ... ok
+test web::status::tests::status_shows_daemon_not_running ... ok
+test web::tests::host_validation_rejects_mismatch ... ok
+test web::tests::index_serves_html ... ok
+test web::config_write::tests::prune_backups_keeps_latest_n ... ok
+test web::tests::unknown_api_path_returns_404_or_fallback ... ok
+test tests::process_startup_sends_bootstrap_frame_to_runtime_stdin ... ok
+test web::tests::auth_layer_blocks_missing_token_and_accepts_valid_token ... ok
+test web::tests::meta_endpoint_returns_version ... ok
+test tests::startup_uses_runner_config_directory_for_host_agent_config_resolution ... FAILED
+test bootstrap::tests::bootstrap_vm_runtime_without_frame_disables_sidecar_tools_for_direct_execution ... ok
+test bootstrap::tests::bootstrap_vm_runtime_with_sidecar_metadata_routes_shell_status_through_sidecar_path ... ok
+test bootstrap::tests::bootstrap_vm_runtime_with_process_tier_frame_disables_sidecar_tools ... ok
+test bootstrap::tests::bootstrap_rejects_unknown_provider_in_agent_selection ... ok
+
+failures:
+
+---- tests::startup_uses_runner_config_directory_for_host_agent_config_resolution stdout ----
+
+thread 'tests::startup_uses_runner_config_directory_for_host_agent_config_resolution' (4205944) panicked at crates/runner/src/tests.rs:1576:5:
+assertion `left == right` failed
+  left: ProviderId("openai")
+ right: ProviderId("google-aistudio")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::startup_uses_runner_config_directory_for_host_agent_config_resolution
+
+test result: FAILED. 289 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.30s
+
+error: test failed, to rerun pass `-p runner --lib`

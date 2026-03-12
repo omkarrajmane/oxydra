@@ -1,0 +1,180 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/omkarrajmane/code/oxydra/crates/wasm-guest/Cargo.toml
+workspace: /Users/omkarrajmane/code/oxydra/Cargo.toml
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+   Compiling smallvec v1.15.1
+   Compiling serde_core v1.0.228
+   Compiling http v1.4.0
+   Compiling jobserver v0.1.34
+   Compiling rustls v0.23.37
+   Compiling num-traits v0.2.19
+   Compiling futures-channel v0.3.32
+   Compiling regex-syntax v0.8.10
+   Compiling core-foundation v0.10.1
+   Compiling security-framework-sys v2.17.0
+   Compiling uuid v1.22.0
+   Compiling console v0.15.11
+   Compiling parking_lot_core v0.9.12
+   Compiling icu_normalizer v2.1.1
+   Compiling cc v1.2.56
+   Compiling security-framework v3.7.0
+   Compiling parking_lot v0.12.5
+   Compiling idna_adapter v1.2.1
+   Compiling tokio v1.50.0
+   Compiling http-body v1.0.1
+   Compiling idna v1.1.0
+   Compiling http-body-util v0.1.3
+   Compiling url v2.5.8
+   Compiling regex-automata v0.4.14
+   Compiling cmake v0.1.57
+   Compiling aws-lc-sys v0.38.0
+   Compiling matchers v0.2.0
+   Compiling tracing-subscriber v0.3.22
+   Compiling hyper v1.8.1
+   Compiling tokio-util v0.7.18
+   Compiling tower v0.5.3
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.149
+   Compiling tower-http v0.6.8
+   Compiling hyper-util v0.1.20
+   Compiling chrono v0.4.44
+   Compiling gray_matter v0.3.2
+   Compiling insta v1.46.3
+   Compiling chrono-tz v0.10.4
+   Compiling types v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/types)
+   Compiling aws-lc-rs v1.16.1
+   Compiling rustls-webpki v0.103.9
+   Compiling tokio-rustls v0.26.4
+   Compiling rustls-platform-verifier v0.6.2
+   Compiling hyper-rustls v0.27.7
+   Compiling reqwest v0.13.2
+   Compiling provider v0.2.8 (/Users/omkarrajmane/code/oxydra/crates/provider)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s
+     Running unittests src/lib.rs (target/debug/deps/provider-6bcdc1a6ebd88255)
+
+running 115 tests
+test anthropic::sse_event_deser_tests::message_delta_null_stop_reason ... ok
+test anthropic::sse_event_deser_tests::content_block_start_thinking ... ok
+test anthropic::sse_event_deser_tests::content_block_start_text ... ok
+test anthropic::sse_event_deser_tests::content_block_start_tool_use ... ok
+test anthropic::sse_event_deser_tests::content_block_stop_parses ... ok
+test anthropic::sse_event_deser_tests::message_delta_without_usage ... ok
+test anthropic::sse_event_deser_tests::content_block_delta_text ... ok
+test anthropic::sse_event_deser_tests::message_delta_with_stop_reason_and_usage ... ok
+test anthropic::sse_event_deser_tests::content_block_delta_input_json ... ok
+test anthropic::sse_event_deser_tests::message_start_with_usage ... ok
+test anthropic::sse_event_deser_tests::content_block_delta_thinking ... ok
+test anthropic::sse_event_deser_tests::message_start_without_usage ... ok
+test anthropic::sse_event_deser_tests::message_stop_parses ... ok
+test anthropic::sse_event_deser_tests::ping_event_parses ... ok
+test anthropic::sse_event_deser_tests::stream_error_event ... ok
+test anthropic::sse_event_deser_tests::stream_error_without_message ... ok
+test anthropic::sse_event_deser_tests::stream_event_envelope_extracts_type ... ok
+test anthropic::sse_event_deser_tests::unknown_fields_are_tolerated ... ok
+test anthropic::tool_call_accumulator_tests::default_accumulator_is_empty ... ok
+test anthropic::tool_call_accumulator_tests::start_tool_assigns_sequential_ordinals ... ok
+test anthropic::tool_call_accumulator_tests::append_json_without_prior_start_tool_assigns_ordinal ... ok
+test anthropic::tool_call_accumulator_tests::append_json_accumulates_arguments ... ok
+test anthropic::tool_call_accumulator_tests::index_remapping_skips_non_tool_blocks ... ok
+test anthropic::tool_call_accumulator_tests::multiple_tools_accumulate_independently ... ok
+test responses::tests::ordinal_assigned_in_append_when_no_prior_register ... ok
+test responses::tests::single_tool_call_gets_ordinal_zero ... ok
+test responses::tests::two_tool_calls_get_distinct_ordinals_zero_and_one ... ok
+test responses::tests::three_tool_calls_get_consecutive_ordinals ... ok
+test responses::tests::completed_event_skips_tool_calls_when_streaming_deltas_already_sent ... ok
+test responses::tests::completed_event_emits_sequential_indices_when_no_streaming_deltas ... ok
+test responses::tests::completed_event_emits_tool_calls_when_only_output_item_added_was_seen ... ok
+test tests::anthropic_request_includes_image_block_for_image_attachment ... ok
+test tests::anthropic_request_includes_document_block_for_pdf_attachment ... ok
+test tests::anthropic_response_normalization_maps_text_and_tool_use ... ok
+test tests::anthropic_stream_completion_tokens_combined_at_message_delta ... ok
+test tests::anthropic_stream_empty_payload_returns_empty_items ... ok
+test tests::anthropic_sse_parser_handles_comment_lines_and_crlf ... ok
+test tests::anthropic_stream_empty_text_delta_not_emitted ... ok
+test tests::anthropic_stream_error_event_produces_terminal_error ... ok
+test tests::anthropic_stream_error_without_message_uses_default ... ok
+test tests::anthropic_stream_finish_reason_from_message_delta ... ok
+test tests::anthropic_stream_invalid_json_returns_error ... ok
+test tests::anthropic_stream_message_start_without_usage_emits_nothing ... ok
+test tests::anthropic_stream_message_stop_without_prior_message_delta ... ok
+test tests::anthropic_stream_multiple_tools_interleaved_with_text ... ok
+test tests::anthropic_stream_ping_is_ignored ... ok
+test tests::anthropic_stream_prompt_tokens_emitted_at_message_start ... ok
+test tests::anthropic_stream_text_delta_emits_text ... ok
+test tests::anthropic_stream_thinking_delta_emits_reasoning ... ok
+test tests::anthropic_stream_tool_call_accumulation ... ok
+test tests::anthropic_stream_unknown_event_type_is_ignored ... ok
+test tests::anthropic_stream_tool_call_index_remapping ... ok
+test tests::api_key_resolution_uses_expected_precedence ... ok
+test tests::anthropic_stream_unknown_delta_type_is_ignored ... ok
+test tests::anthropic_unknown_models_are_rejected_before_network_request ... ok
+test tests::anthropic_validate_rejects_audio_attachment ... ok
+test tests::gemini_function_call_response_mapping ... ok
+test tests::gemini_request_includes_inline_data_for_image_attachment ... ok
+test tests::gemini_request_includes_inline_data_for_multiple_attachments ... ok
+test tests::gemini_request_omits_assistant_text_when_tool_calls_present ... ok
+test tests::gemini_response_normalization ... ok
+test tests::anthropic_transport_errors_are_mapped ... ok
+test tests::gemini_response_normalization_includes_inline_data_attachments ... ok
+test tests::gemini_stream_chunk_parsing ... ok
+test tests::anthropic_response_parse_errors_are_mapped ... ok
+test tests::gemini_tool_result_encoding ... ok
+test tests::anthropic_http_status_errors_are_mapped ... ok
+test tests::anthropic_stream_connection_lost_without_message_stop ... ok
+test tests::gemini_validate_rejects_audio_when_model_only_supports_image ... ok
+test tests::anthropic_stream_http_error_before_streaming ... ok
+test tests::gemini_unknown_models_are_rejected_before_network_request ... ok
+test tests::gemini_http_status_errors_are_mapped ... ok
+test tests::live_anthropic_stream_smoke_emits_text_or_tool_calls ... ignored, requires ANTHROPIC_API_KEY and network access
+test tests::live_openai_smoke_normalizes_response ... ignored, requires OPENAI_API_KEY and network access
+test tests::anthropic_end_to_end_stream_via_one_shot_server ... ok
+test tests::gemini_transport_errors_are_mapped ... ok
+test tests::openai_validate_rejects_attachment_for_non_attachment_model ... ok
+test tests::openai_request_includes_image_url_content_for_image_attachment ... ok
+test tests::partial_input_on_chained_turn ... ok
+test tests::openai_validate_rejects_audio_attachment ... ok
+test tests::gemini_stream_connection_lost_without_finish_reason ... ok
+test tests::reliable_provider_does_not_retry_non_retriable_errors ... ok
+test tests::response_normalization_maps_message_and_finish_reason ... ok
+test tests::request_normalization_maps_messages_and_tools ... ok
+test tests::desync_fallback_resets_and_retries ... ok
+test tests::responses_completed_event_does_not_repeat_streamed_text ... ok
+test tests::responses_request_includes_input_image_for_image_attachment ... ok
+test tests::http_status_errors_are_mapped ... ok
+test tests::responses_sse_event_parsing ... ok
+test tests::responses_provider_uses_openai_catalog ... ok
+test tests::previous_response_id_updated_on_completion ... ok
+test tests::response_parse_errors_are_mapped ... ok
+test tests::responses_validate_rejects_audio_attachment ... ok
+test tests::responses_stream_request_normalization_sets_stream_true ... ok
+test tests::sse_parser_handles_fragmented_frames ... ok
+test tests::streaming_request_normalization_enables_stream_and_usage ... ok
+test tests::stream_payload_normalization_maps_text_tool_usage_and_finish_reason ... ok
+test tests::tool_call_deltas_reassemble_arguments_across_payloads ... ok
+test tests::tool_call_deltas_reassemble_split_unicode_escape_sequences ... ok
+test tests::stream_emits_connection_lost_when_done_sentinel_missing ... ok
+test tests::transport_errors_are_mapped ... ok
+test tests::responses_stream_connection_lost_without_completed_event ... ok
+test tests::validate_context_passes_when_no_attachments_present ... ok
+test tests::unknown_models_are_rejected_before_network_request ... ok
+test tests::stream_finishes_without_connection_lost_when_done_is_received ... ok
+test tests::reliable_provider_enforces_max_attempts ... ok
+test tests::reliable_provider_retries_transport_failures_then_succeeds ... ok
+test tests::streaming_request_normalization_snapshot_is_stable ... ok
+test tests::anthropic_streaming_request_includes_stream_field ... ok
+test tests::gemini_request_serialization_snapshot ... ok
+test tests::responses_request_serialization_snapshot ... ok
+test tests::anthropic_request_normalization_snapshot_is_stable ... ok
+test tests::gemini_provider_uses_default_base_url_when_empty ... ok
+test tests::anthropic_provider_uses_default_base_url_when_empty ... ok
+test tests::openai_provider_uses_default_base_url_when_empty ... ok
+
+test result: ok. 113 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+   Doc-tests provider
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

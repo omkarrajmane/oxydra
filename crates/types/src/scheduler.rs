@@ -80,6 +80,8 @@ pub struct ScheduleDefinition {
     pub channel_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_context_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<crate::RunPolicyInput>,
 }
 
 // --- Execution record (audit trail) ---

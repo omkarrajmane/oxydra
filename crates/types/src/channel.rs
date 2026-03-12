@@ -424,6 +424,17 @@ pub enum GatewayServerFrame {
     /// A media attachment to be delivered through the channel (photo, audio,
     /// document, etc.). Emitted when the agent uses the `send_media` tool.
     MediaAttachment(GatewayMediaAttachment),
+    /// A policy-related notification (e.g. budget warnings, stops).
+    PolicyNotification(GatewayPolicyNotification),
+}
+
+/// A policy-related notification forwarded through the gateway.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GatewayPolicyNotification {
+    pub request_id: String,
+    pub session: GatewaySession,
+    pub turn: GatewayTurnStatus,
+    pub event: crate::model::PolicyStreamEvent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
