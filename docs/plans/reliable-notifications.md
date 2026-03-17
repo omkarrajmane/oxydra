@@ -2,16 +2,19 @@
 
 Status: Proposed
 Created: 2026-03-17
+Updated: 2026-03-17
 
 ## Executive summary
 
-Scheduled-task notifications are silently dropped in two common scenarios:
+Scheduled-task notifications are currently unreliable in three concrete cases:
 
-1. **TUI — session changed.** The originating session ID is frozen in the `ScheduleDefinition` at creation time. If the user has since created a new session (`/new`), let the old session expire via TTL, or restarted the process, the notification has nowhere to go and is discarded with a `debug!` log.
+1. **TUI origin session is stale or disconnected.** The schedule stores the session ID captured at creation time. `GatewayServer::notify_user()` only looks up that exact in-memory session. If it is missing, delivery is dropped. If it still exists in memory but has `receiver_count() == 0`, the gateway still publishes into a dead broadcast channel and the notification is effectively lost.
 
-2. **Telegram — topic deleted.** The originating `channel_context_id` encodes `{chat_id}:{thread_id}`. If that forum topic is deleted, the Telegram Bot API returns a 400 error inside a fire-and-forget task. The error is never observed; the notification is lost.
+2. **Telegram forum topic is deleted.** The stored `channel_context_id` encodes `{chat_id}:{thread_id}` for forum topics. When the topic is deleted, Telegram returns `400 Bad Request: message thread not found` inside the detached proactive-send task. The sender logs too little, does not self-heal the stored route, and keeps retrying the dead topic forever.
 
-This plan fixes both with minimal-surface changes — no new tables, no new traits, no cross-crate dependencies. Each phase is a single-file change.
+3. **Scheduled Telegram media is not proactively delivered.** The scheduler already emits `GatewayServerFrame::MediaAttachment` frames before the text notification, but `TelegramProactiveSender::send_proactive()` currently handles only `ScheduledNotification`. Scheduled media for Telegram is therefore dropped today.
+
+This revised plan fixes all three. It is no longer a single-file change. It stays incremental and test-gated, but it deliberately expands scope to cover proactive Telegram media delivery, durable route self-healing after repeated thread failures, and guidebook updates so the canonical docs match the implementation.
 
 ---
 
@@ -22,276 +25,316 @@ This plan fixes both with minimal-surface changes — no new tables, no new trai
 When any user turn enters the gateway, `TurnOrigin` is populated with the ingress channel:
 
 - **TUI / WebSocket** — `channel_id = "tui"`, `channel_context_id = <session_uuid>`
-  (`gateway/lib.rs` around `start_turn_with_origin`)
 - **Telegram** — `channel_id = "telegram"`, `channel_context_id = "{chat_id}:{thread_id}"` for forum topics, `"{chat_id}"` for regular chats/DMs
-  (`channels/src/telegram.rs:231` — `derive_channel_context_id`)
 
-The `schedule_create` tool captures both fields from `ToolExecutionContext` and writes them to the `ScheduleDefinition` row. They are **never updated** after creation.
+The `schedule_create` tool copies both fields from `ToolExecutionContext` into the persisted `ScheduleDefinition`. They are not updated later.
 
 ### Scheduler execution
 
-Each run executes in a dedicated session: `scheduled:{schedule_id}` (`scheduler_executor.rs:93`). The originating session is not involved in execution — only in notification delivery.
+Each scheduled run executes in its own runtime session: `scheduled:{schedule_id}`. The originating interactive session is only relevant for notification delivery.
 
-### Notification dispatch (`gateway/lib.rs:1466`)
+### Scheduler output shape
 
-```
+When a run should notify, the scheduler emits:
+
+1. Zero or more `GatewayServerFrame::MediaAttachment` frames
+2. One `GatewayServerFrame::ScheduledNotification` text frame
+
+That ordering is already implemented in `runtime/src/scheduler_executor.rs`.
+
+### Notification dispatch today
+
+```text
 channel_id == "tui"
-  └─ look up channel_context_id (= session_id) in user's in-memory sessions
-      ├─ found + connected  → session.publish(frame)   ✅
-      └─ not found          → debug log, silent drop    ❌
+  -> look up exact session_id from schedule.channel_context_id
+     -> found: publish(frame) even if receiver_count() == 0
+     -> missing: debug log, drop
 
-channel_id == "telegram" (or other)
-  └─ call registered ProactiveSender.send_proactive(channel_context_id, frame)
-      └─ TelegramProactiveSender parses "{chat_id}:{thread_id}", calls Bot API
-          ├─ topic exists   → delivered                 ✅
-          └─ topic deleted  → Bot API 400, discarded    ❌
+channel_id == "telegram"
+  -> call ProactiveSender.send_proactive(channel_context_id, frame)
+     -> ScheduledNotification handled as text
+     -> MediaAttachment ignored
+     -> deleted topic returns Telegram 400 inside detached task
 
-channel_id == None (legacy)
-  └─ broadcast to all in-memory sessions for user       ✅ (but no channel specificity)
+channel_id == None
+  -> legacy broadcast to all in-memory sessions for user
 ```
 
 ---
 
-## Phase 1: TUI — fallback to most-recently-active connected session
+## Phase 1: TUI fallback fan-out to all connected top-level TUI sessions
 
 ### Problem in detail
 
-`SessionState` (`gateway/src/session.rs`) has:
-- `events: broadcast::Sender<GatewayServerFrame>` — `receiver_count()` is the number of live WebSocket subscribers
-- `last_activity_epoch_secs: AtomicU64` — updated by `mark_active()` on each turn
-- `channel_origin: String` — records which channel created this session ("tui", "telegram", …)
-- `parent_session_id: Option<String>` — `Some(…)` for subagent sessions
+The current TUI path is too narrow:
 
-The current code only tries the exact session ID stored at schedule-creation time. When that session is gone (evicted, new session created), the `else` branch at line 1481 logs at `debug!` and returns — the frame is silently dropped.
+- It only targets the exact stored origin session ID.
+- It treats "session exists in memory" as equivalent to "session is connected".
+- It does not log the "user has no in-memory sessions after restart" case.
+
+This misses the most common stale-session path: the origin session still exists in `user.sessions`, but `receiver_count() == 0` until idle cleanup evicts it.
 
 ### Proposed change
 
-**File:** `crates/gateway/src/lib.rs`
-**Function:** `impl SchedulerNotifier for GatewayServer` → `notify_user`
+**Files:**
+- `crates/gateway/src/lib.rs`
+- `crates/gateway/src/tests.rs`
 
-Replace the TUI branch with a two-step approach:
+Replace the TUI branch in `GatewayServer::notify_user()` with this policy:
 
-1. **Primary attempt**: deliver to the exact origin session (unchanged).
-2. **Fallback**: if the origin session is not present in `user.sessions`, find the most recently active TUI session that:
-   - has at least one live subscriber (`receiver_count() > 0`)
-   - has `channel_origin == GATEWAY_CHANNEL_ID` (avoids accidentally routing to a Telegram-origin session)
-   - has `parent_session_id == None` (excludes subagent sessions)
+1. Resolve the origin session from `schedule.channel_context_id`.
+2. Treat the origin as valid only if:
+   - the session exists
+   - `receiver_count() > 0`
+3. If the origin session is valid, deliver only to that session. This preserves current behavior when the stored route is still good.
+4. If the origin session is missing or disconnected, fan out to **all connected top-level TUI sessions** for the user:
+   - `channel_origin == GATEWAY_CHANNEL_ID`
+   - `parent_session_id.is_none()`
+   - `receiver_count() > 0`
+5. If fallback delivery happens, log at `info!` with:
+   - `schedule_id`
+   - `user_id`
+   - `origin_session_id`
+   - `delivered_session_count`
+6. If there is no in-memory user state or there are no connected top-level TUI sessions, log at `info!` that the notification was dropped.
+7. If a TUI schedule has no `channel_context_id`, log at `warn!` because that indicates a malformed route rather than a normal offline case.
 
-If no fallback session is found, log at `info!` (not `debug!`) with the schedule ID and user ID so it is visible without verbose logging.
+### Notes
 
-### Code change (conceptual diff)
+- The chosen fallback policy is fan-out, not "most recent session". No `last_activity_epoch_secs` access is needed.
+- This phase does not introduce durable queuing. If the user has no connected TUI sessions at delivery time, the notification is still lost, but now visibly and intentionally.
 
-```rust
-// Before (lines ~1469–1485)
-if channel_id == GATEWAY_CHANNEL_ID {
-    if let Some(ref session_id) = schedule.channel_context_id {
-        let users = self.users.read().await;
-        if let Some(user) = users.get(&schedule.user_id) {
-            let sessions = user.sessions.read().await;
-            if let Some(session) = sessions.get(session_id) {
-                session.publish(frame);
-            } else {
-                tracing::debug!(
-                    schedule_id = %schedule.schedule_id,
-                    session_id = %session_id,
-                    "scheduler notification: TUI session not connected"
-                );
-            }
-        }
-    }
-}
+### Tests to add
 
-// After
-if channel_id == GATEWAY_CHANNEL_ID {
-    let users = self.users.read().await;
-    if let Some(user) = users.get(&schedule.user_id) {
-        let sessions = user.sessions.read().await;
+1. **Origin connected** — delivers only to the origin session even when other TUI sessions are also connected.
+2. **Origin present but disconnected** — fans out to all connected top-level TUI sessions.
+3. **Origin evicted** — fans out to all connected top-level TUI sessions.
+4. **Only subagent sessions connected** — nothing is delivered; drop path logged.
+5. **Mixed channel origins** — Telegram-origin sessions are ignored; only connected top-level TUI sessions receive fallback.
+6. **No in-memory user state after restart** — no panic; drop path logged at `info!`.
+7. **Malformed TUI schedule with missing `channel_context_id`** — warning is logged and nothing is delivered.
 
-        // Primary: deliver to origin session if it is still active.
-        let origin_session = schedule
-            .channel_context_id
-            .as_deref()
-            .and_then(|id| sessions.get(id));
+### Verification gate
 
-        if let Some(session) = origin_session {
-            session.publish(frame);
-        } else {
-            // Fallback: most recently active connected top-level TUI session.
-            let fallback = sessions
-                .values()
-                .filter(|s| {
-                    s.channel_origin == GATEWAY_CHANNEL_ID
-                        && s.parent_session_id.is_none()
-                        && s.events.receiver_count() > 0
-                })
-                .max_by_key(|s| s.last_activity_epoch_secs.load(Ordering::Relaxed));
+Run:
 
-            if let Some(session) = fallback {
-                tracing::info!(
-                    schedule_id = %schedule.schedule_id,
-                    origin_session_id = ?schedule.channel_context_id,
-                    fallback_session_id = %session.session_id,
-                    "scheduler notification: origin TUI session not found, delivering to most-recent active session"
-                );
-                session.publish(frame);
-            } else {
-                tracing::info!(
-                    schedule_id = %schedule.schedule_id,
-                    user_id = %schedule.user_id,
-                    "scheduler notification: no connected TUI session for user, notification dropped"
-                );
-            }
-        }
-    }
-}
+```sh
+cargo test -p gateway
+cargo clippy -p gateway --all-targets --all-features
 ```
-
-Note: `last_activity_epoch_secs` is currently `pub(crate)` on `SessionState` and the `Ordering` re-export is already in scope via `std::sync::atomic::Ordering` — no new imports needed.
-
-### Tests to add (`gateway/src/tests.rs` or inline)
-
-1. **Origin session present** — delivers to origin session, not to a second connected session.
-2. **Origin session evicted, fallback session connected** — delivers to fallback; log message at `info!` contains both session IDs.
-3. **Origin session evicted, no connected TUI sessions** — no panic; `info!` log says "notification dropped".
-4. **Origin session evicted, only subagent sessions connected** — subagent sessions are excluded; "notification dropped" path taken.
-5. **Origin session evicted, multiple fallback candidates** — delivers to the one with the highest `last_activity_epoch_secs`.
-
-### What this does NOT change
-
-- Telegram routing — unaffected.
-- The schedule definition schema — no DB change.
-- The `SchedulerNotifier` trait — unchanged.
-- The `channel_context_id` value stored at creation time — unchanged; it is still used as the primary delivery target.
 
 ---
 
-## Phase 2: Telegram — graceful thread-not-found fallback
+## Phase 2: Telegram proactive delivery must handle both text and scheduled media
 
 ### Problem in detail
 
-`TelegramProactiveSender::send_proactive` (`channels/src/telegram.rs:1457`) is a synchronous trait method that spawns a detached `tokio::task` to call the Bot API. The spawned task currently discards the `Result` from every `bot.send_message(…)` call.
+`TelegramProactiveSender::send_proactive()` currently has two gaps:
 
-When a forum topic is deleted, Telegram returns:
-```
-HTTP 400 Bad Request
-{ "ok": false, "error_code": 400, "description": "Bad Request: message thread not found" }
-```
+- It only handles `GatewayServerFrame::ScheduledNotification`.
+- Its text path attempts HTML and then plain text, but it has no topic-deleted recovery path and no structured outcome for later route self-healing.
 
-The `frankenstein` library surfaces this as `frankenstein::Error::Api(frankenstein::ErrorResponse)` where `ErrorResponse` has fields `error_code: u64` and `description: String`.
+Separately, the interactive Telegram adapter already has media upload logic, but the proactive sender does not reuse it, so scheduled media frames are dropped before they ever reach Telegram.
 
 ### Proposed change
 
-**File:** `crates/channels/src/telegram.rs`
-**Function:** `TelegramProactiveSender::send_proactive`
+**Files:**
+- `crates/types/src/channel.rs`
+- `crates/runtime/src/scheduler_executor.rs`
+- `crates/channels/src/telegram.rs`
+- crate-local tests in `channels` and `runtime`
 
-In the spawned task, after the primary `send_message` call:
+Make proactive Telegram delivery batch-aware and schedule-aware:
 
-1. If the result is `Ok(…)` — done.
-2. If the error is a `frankenstein::Error::Api` with `error_code == 400` and `description` contains `"message thread not found"`:
-   - Log at `warn!` level with `channel_context_id`, `chat_id`, `thread_id`.
-   - Retry `send_message` with `message_thread_id: None` (main group chat) and `parse_mode` and `text` unchanged.
-   - Log the outcome of the retry at `info!` (success) or `warn!` (failure).
-3. Any other error — log at `warn!` with the full error.
+1. Extend `GatewayMediaAttachment` with an optional `schedule_id`.
+   - Scheduler-emitted media sets `schedule_id = Some(schedule.schedule_id.clone())`.
+   - Interactive media keeps `schedule_id = None`.
+2. Refactor `TelegramProactiveSender` around small internal batch helpers:
+   - `send_text_batch(...)`
+   - `send_media_batch(...)`
+3. `send_proactive()` must handle:
+   - `ScheduledNotification`
+   - `MediaAttachment` when `schedule_id.is_some()`
+4. Batch delivery semantics:
+   - Attempt the stored Telegram target first.
+   - If Telegram returns `message thread not found` and `thread_id.is_some()`, retry the same batch to the main chat (`message_thread_id = None`).
+   - For text batches, preserve the current HTML-to-plain-text fallback behavior on both the stored target and the fallback target.
+   - For media batches, reuse the existing media upload logic and apply the same deleted-thread fallback to main chat.
+   - If media still cannot be uploaded after retry, log a warning and send a plain text notice when possible so the user sees that an attachment failed instead of losing it silently.
+5. Batch outcome is counted once per proactive frame, not once per text chunk. A long message split into N chunks is still one delivery batch for failure-streak purposes.
 
-The retry uses the same `chat_id` parsed from `channel_context_id`. Only `message_thread_id` changes.
+### Important regression guard
 
-### Code change (conceptual diff)
+The new deleted-thread handling must **not** remove the existing plain-text fallback for formatting or parse-mode errors. The correct behavior is:
 
-```rust
-// In the spawned task inside send_proactive, replacing the current fire-and-forget:
+1. Try HTML to the stored target
+2. If the stored target is deleted, switch targets and retry the batch
+3. If HTML itself fails for a non-thread reason, keep the current plain-text fallback behavior
 
-let primary_result = bot
-    .send_message(&SendMessageParams {
-        chat_id: ChatId::Integer(chat_id),
-        text: html_text.clone(),
-        message_thread_id: thread_id,
-        parse_mode: Some(ParseMode::Html),
-        // … other fields …
-    })
-    .await;
+### Tests to add
 
-match primary_result {
-    Ok(_) => { /* delivered */ }
-    Err(ref e) if is_thread_not_found(e) => {
-        // Topic was deleted — retry to the main group chat.
-        warn!(
-            channel_context_id = %ctx_id,
-            chat_id,
-            thread_id = ?thread_id,
-            "telegram proactive: forum topic not found, retrying to main chat"
-        );
-        let fallback_result = bot
-            .send_message(&SendMessageParams {
-                chat_id: ChatId::Integer(chat_id),
-                text: html_text.clone(),
-                message_thread_id: None,  // <-- main chat
-                parse_mode: Some(ParseMode::Html),
-                // … same other fields …
-            })
-            .await;
-        match fallback_result {
-            Ok(_) => {
-                info!(chat_id, "telegram proactive: fallback to main chat delivered");
-            }
-            Err(e2) => {
-                warn!(chat_id, error = %e2, "telegram proactive: fallback to main chat also failed");
-            }
-        }
-    }
-    Err(e) => {
-        warn!(
-            channel_context_id = %ctx_id,
-            error = %e,
-            "telegram proactive: send_message failed"
-        );
-    }
-}
+1. **Text primary success** — no retry, no warning.
+2. **Non-thread HTML failure** — still falls back to plain text on the original target.
+3. **Thread-not-found text batch** — retries to main chat, and remaining chunks use the fallback target.
+4. **Scheduled media success** — `MediaAttachment` is proactively uploaded.
+5. **Scheduled media thread-not-found** — media retries to main chat.
+6. **Scheduled media total failure** — warning logged and text fallback notice emitted when possible.
+7. **Non-scheduled `MediaAttachment`** — proactive sender ignores it safely.
+
+### Test implementation note
+
+Use a local mock Telegram HTTP server instead of real network calls. `frankenstein::client_reqwest::Bot::new_url(...)` already supports a custom endpoint, so the `channels` tests can drive real request/response flows against a mock server and verify exact method paths and request bodies.
+
+### Verification gate
+
+Run:
+
+```sh
+cargo test -p channels
+cargo test -p runtime
+cargo clippy -p types -p runtime -p channels --all-targets --all-features
 ```
 
-Where `is_thread_not_found` is a small private helper:
+---
 
-```rust
-fn is_thread_not_found(error: &frankenstein::Error) -> bool {
-    match error {
-        frankenstein::Error::Api(ref resp) => {
-            resp.error_code == 400
-                && resp.description.contains("message thread not found")
-        }
-        _ => false,
-    }
-}
+## Phase 3: Remap deleted Telegram topics after 3 consecutive failed proactive batches
+
+### Problem in detail
+
+Immediate fallback to the main chat restores delivery, but it does not stop repeated primary failures. Without a stored-route update, every later run will still attempt the deleted topic first.
+
+The required behavior is:
+
+- do not rewrite the stored route after a single transient error
+- do rewrite it after **3 consecutive thread-not-found failures**
+- apply the same policy to both scheduled text and scheduled media
+
+### Proposed change
+
+**Files:**
+- `crates/types/src/proactive.rs`
+- `crates/memory/migrations/0023_add_delivery_thread_not_found_streak_to_schedules.sql`
+- `crates/memory/src/scheduler_store.rs`
+- `crates/channels/src/telegram.rs`
+- `crates/runner/src/bin/oxydra-vm.rs`
+- relevant tests in `memory`, `channels`, and `runner`
+
+Implement durable route self-healing with a small internal delivery-state field:
+
+1. Add an internal scheduler-delivery state column to `schedules`, for example:
+
+```sql
+delivery_thread_not_found_streak INTEGER NOT NULL DEFAULT 0
 ```
 
-This helper isolates the Telegram-specific error string matching, making it easy to extend if Telegram changes the wording.
+2. Introduce a narrow trait for schedule notification route updates and streak maintenance.
+   - The trait lives in a boundary-safe crate so `channels` does not need a direct storage-crate dependency.
+   - The memory crate implements it with transactional SQL against the `schedules` table.
+   - The runner injects it into `TelegramProactiveSender` at bootstrap.
+3. `TelegramProactiveSender` must resolve the schedule ID per proactive batch:
+   - `ScheduledNotification` -> `notification.schedule_id`
+   - scheduled `MediaAttachment` -> `media.schedule_id`
+4. Batch-level streak rules:
+   - **Primary delivery to stored target succeeds:** reset streak to `0`
+   - **Primary delivery fails with `message thread not found`:** increment streak by `1`
+   - **Primary failure is anything else:** do not increment the thread-not-found streak
+5. Remap rule:
+   - If the streak reaches `3`
+   - and fallback delivery to the main chat succeeded
+   - then atomically update `schedules.channel_context_id` to `chat_id.to_string()`
+   - and reset the streak to `0`
+6. Log remaps at `info!` with:
+   - `schedule_id`
+   - old `channel_context_id`
+   - new `channel_context_id`
+   - threshold (`3`)
 
-The same pattern must be applied to the other media-send paths in `send_proactive` (`SendPhotoParams`, `SendAudioParams`, etc.) — each currently has the same fire-and-forget structure. They all follow the same fix: check result, detect thread-not-found, retry without `thread_id`.
+### Why this is persistent
 
-### Deduplication note
+The streak is stored in the schedules table rather than in process memory. That means the "3 consecutive failures" rule survives process restarts and does not depend on a long-lived sender instance.
 
-The text-send path in `send_proactive` already handles long messages by splitting into chunks (see `split_message` logic in the file). The retry must use the same chunked send so the fallback behaviour is identical to a normal delivery.
+### Tests to add
 
-### Tests to add (`channels/src/telegram.rs` tests module or separate integration tests)
+1. **First and second thread-not-found batch** — streak increments, route unchanged.
+2. **Third consecutive thread-not-found batch with successful fallback** — route remaps to main chat and streak resets.
+3. **Successful primary delivery** — clears prior streak.
+4. **Long multi-chunk text batch** — counts as one failed batch, not one failure per chunk.
+5. **Scheduled media batch** — participates in the same streak/remap logic.
+6. **Fallback failure** — streak increments, route does not remap automatically.
+7. **Post-remap run** — proactive sender uses the main chat directly and no longer attempts the deleted thread.
+8. **Migration/store tests** — default value, increment, reset, and remap semantics are all covered in `memory`.
 
-1. **`is_thread_not_found` helper** — returns `true` for API error 400 with the expected description, `false` for other codes/descriptions, `false` for non-API errors.
-2. **Primary delivery succeeds** — no retry, no log warning.
-3. **Thread-not-found triggers fallback** — mock bot returns error on first call (with thread_id), succeeds on second (without thread_id); both calls verified.
-4. **Fallback also fails** — both errors are logged at `warn!`, no panic.
-5. **Non-400 error** — logged at `warn!`, no retry attempt.
+### Verification gate
+
+Run:
+
+```sh
+cargo test -p memory
+cargo test -p channels
+cargo test -p runner
+cargo clippy -p types -p memory -p channels -p runner --all-targets --all-features
+```
+
+---
+
+## Phase 4: Canonical docs and acceptance gates
+
+### Problem in detail
+
+The guidebook is already stale in this area. It still describes:
+
+- TUI notification routing as `channel_id == "gateway"` instead of `"tui"`
+- an async `ProactiveSender::send_notification(...)` trait instead of the current sync `send_proactive(...)`
+- proactive Telegram behavior without the new media and route-remap semantics
+
+The implementation change should not land without updating the canonical docs.
+
+### Proposed change
+
+**Docs to update:**
+- `docs/guidebook/05-agent-runtime.md`
+- `docs/guidebook/09-gateway-and-channels.md`
+- `docs/guidebook/12-external-channels-and-identity.md`
+- `docs/guidebook/15-progressive-build-plan.md`
+
+Update those chapters to reflect:
+
+- TUI fallback fan-out to connected top-level sessions when the origin session is missing or disconnected
+- the correct channel ID (`"tui"`)
+- the actual `ProactiveSender` naming/signature
+- scheduled Telegram media delivery
+- deleted-topic fallback to main chat
+- 3-failure stored-route remap behavior
+
+### Acceptance gate
+
+Before the change is considered complete, run:
+
+```sh
+cargo fmt --check
+cargo clippy -p types -p memory -p gateway -p runtime -p channels -p runner --all-targets --all-features
+cargo test -p types
+cargo test -p memory
+cargo test -p gateway
+cargo test -p runtime
+cargo test -p channels
+cargo test -p runner
+```
 
 ---
 
 ## Shared constraints
 
-- **No schema changes.** Both fixes live entirely in the notification-delivery layer. The `ScheduleDefinition` rows are unchanged.
-- **No new traits or crate dependencies.** Phase 1 touches one function in `gateway/src/lib.rs`; Phase 2 touches one function (and its sibling send-paths) in `channels/src/telegram.rs`. Neither phase adds imports beyond what is already in scope.
-- **Logging level policy.** Silent delivery failures are upgraded from `debug!` to `info!` so they are visible in default log configurations without requiring verbose mode.
-- **No behaviour change when everything works.** The primary delivery path is attempted first in both phases; the fallback only fires when the primary path fails.
+- **No durable offline queue in this change.** If no connected TUI session exists and the schedule route is TUI, the notification is still dropped.
+- **Primary behavior stays unchanged when the stored route is healthy.** TUI still delivers only to the origin session when it is connected. Telegram still delivers to the stored target first.
+- **The Telegram remap threshold is fixed at 3 for now.** It is an implementation constant, not a new user-facing config knob.
+- **Scheduled media is in scope.** Reliability fixes must cover both text and media proactive delivery.
+- **The storage-facing route update path stays narrow.** The `channels` crate should not grow a direct dependency on the storage implementation crate.
 
 ---
 
-## What this does NOT address (out of scope)
+## Explicitly out of scope
 
-- **Persistent notification queue.** If no TUI session is connected at all when a notification fires, the notification is still lost (logged at `info!`). A durable queue (new `undelivered_notifications` table + drain-on-connect logic) is the right follow-up but is a separate, larger change.
-- **Updating `channel_context_id` when sessions change.** Keeping the frozen origin and adding a best-effort fallback is simpler than tracking the "current" session — and avoids the question of which session is "current" when the user has multiple open.
-- **Telegram: remembering the fallback permanently.** Phase 2 retries to the main chat on each run but does not update the stored `channel_context_id`. This means every subsequent run for this schedule will try the deleted topic first, fail, and then fall back. Updating the stored destination on confirmed fallback could be added later.
-- **Discord, WhatsApp, and other future channels.** Phase 2 is Telegram-specific. Future channel adapters should implement the same pattern in their own `ProactiveSender` implementations.
+- Durable notification queueing for offline users
+- Generic self-healing route logic for future Discord/Slack/WhatsApp adapters
+- New user-facing tools or config for editing internal delivery-streak metadata
