@@ -94,6 +94,7 @@ pub struct VmBootstrapRuntime {
     pub provider: Box<dyn Provider>,
     pub memory: Option<Arc<dyn MemoryRetrieval>>,
     pub scheduler_store: Option<Arc<dyn memory::SchedulerStore>>,
+    pub delivery_streak_updater: Option<Arc<dyn types::DeliveryStreakUpdater>>,
     pub session_store: Option<Arc<dyn types::SessionStore>>,
     pub runtime_limits: RuntimeLimits,
     pub tool_registry: ToolRegistry,
@@ -573,29 +574,33 @@ pub async fn bootstrap_vm_runtime_with_paths(
     }
 
     // Build scheduler store and register scheduler tools when enabled.
-    let scheduler_store: Option<Arc<dyn memory::SchedulerStore>> = if config.scheduler.enabled {
+    type SchedulerStoreOpt = Option<Arc<dyn memory::SchedulerStore>>;
+    type StreakUpdaterOpt = Option<Arc<dyn types::DeliveryStreakUpdater>>;
+    let (scheduler_store, delivery_streak_updater): (SchedulerStoreOpt, StreakUpdaterOpt) =
+        if config.scheduler.enabled {
         if let Some(ref backend) = memory_backend {
             match backend.connect_for_scheduler().await {
                 Ok(conn) => {
-                    let store: Arc<dyn memory::SchedulerStore> =
-                        Arc::new(memory::LibsqlSchedulerStore::new(conn));
-                    register_scheduler_tools(&mut registry, store.clone(), &config.scheduler);
+                    let concrete_store = Arc::new(memory::LibsqlSchedulerStore::new(conn));
+                    let scheduler_store: Arc<dyn memory::SchedulerStore> = concrete_store.clone();
+                    let delivery_updater: Arc<dyn types::DeliveryStreakUpdater> = concrete_store;
+                    register_scheduler_tools(&mut registry, scheduler_store.clone(), &config.scheduler);
                     tracing::info!("scheduler tools registered");
-                    Some(store)
+                    (Some(scheduler_store), Some(delivery_updater))
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "failed to create scheduler store; scheduler disabled");
-                    None
+                    (None, None)
                 }
             }
         } else {
             tracing::warn!(
                 "scheduler enabled but memory backend is not available; scheduler disabled"
             );
-            None
+            (None, None)
         }
     } else {
-        None
+        (None, None)
     };
 
     // Validate agent definitions (if any) against available providers/tools and local prompt files.
@@ -701,6 +706,7 @@ pub async fn bootstrap_vm_runtime_with_paths(
         provider,
         memory,
         scheduler_store,
+        delivery_streak_updater,
         session_store,
         runtime_limits,
         tool_registry: registry,

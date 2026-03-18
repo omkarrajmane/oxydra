@@ -22,8 +22,8 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use types::{
-    GatewayCancelActiveTurn, GatewaySendTurn, GatewayServerFrame, MediaAttachment, MediaType,
-    SessionStore, TelegramChannelConfig,
+    DeliveryStreakUpdater, GatewayCancelActiveTurn, GatewaySendTurn, GatewayServerFrame,
+    MediaAttachment, MediaType, RouteDeliveryOutcome, SessionStore, TelegramChannelConfig,
 };
 
 use crate::audit::{AuditEntry, AuditLogger, now_iso8601};
@@ -1641,6 +1641,7 @@ async fn send_media_proactive(
 pub struct TelegramProactiveSender {
     bot: Bot,
     max_message_length: usize,
+    streak_updater: Option<Arc<dyn DeliveryStreakUpdater>>,
 }
 
 impl TelegramProactiveSender {
@@ -1648,6 +1649,19 @@ impl TelegramProactiveSender {
         Self {
             bot: Bot::new(bot_token),
             max_message_length,
+            streak_updater: None,
+        }
+    }
+
+    pub fn new_with_streak_updater(
+        bot_token: &str,
+        max_message_length: usize,
+        streak_updater: Arc<dyn DeliveryStreakUpdater>,
+    ) -> Self {
+        Self {
+            bot: Bot::new(bot_token),
+            max_message_length,
+            streak_updater: Some(streak_updater),
         }
     }
 
@@ -1657,6 +1671,20 @@ impl TelegramProactiveSender {
         Self {
             bot,
             max_message_length,
+            streak_updater: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_with_bot_and_updater(
+        bot: Bot,
+        max_message_length: usize,
+        streak_updater: Arc<dyn DeliveryStreakUpdater>,
+    ) -> Self {
+        Self {
+            bot,
+            max_message_length,
+            streak_updater: Some(streak_updater),
         }
     }
 
@@ -1678,9 +1706,44 @@ impl TelegramProactiveSender {
                     self.max_message_length,
                 )
                 .await;
+
+                // Report streak outcome for text notifications only (D1).
+                if let Some(ref updater) = self.streak_updater {
+                    let route_outcome = match &outcome {
+                        ProactiveDeliveryOutcome::PrimarySuccess => {
+                            Some(RouteDeliveryOutcome::PrimaryRouteSucceeded)
+                        }
+                        ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess => {
+                            Some(RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackSucceeded {
+                                fallback_channel_context_id: chat_id.to_string(),
+                            })
+                        }
+                        ProactiveDeliveryOutcome::ThreadNotFoundFallbackFailed => {
+                            Some(RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackFailed)
+                        }
+                        ProactiveDeliveryOutcome::OtherFailure => {
+                            // Non-route errors don't affect the route-health streak.
+                            None
+                        }
+                    };
+
+                    if let Some(ref ro) = route_outcome
+                        && let Err(e) = updater
+                            .report_outcome(&notif.schedule_id, channel_context_id, ro)
+                            .await
+                    {
+                        warn!(
+                            schedule_id = %notif.schedule_id,
+                            error = %e,
+                            "failed to update delivery streak"
+                        );
+                    }
+                }
+
                 Some(outcome)
             }
             GatewayServerFrame::MediaAttachment(media) if media.schedule_id.is_some() => {
+                // Media: deliver with fallback, but no streak reporting (D1).
                 let outcome =
                     send_media_proactive(&self.bot, chat_id, thread_id, &media.attachment).await;
                 Some(outcome)
@@ -1694,12 +1757,14 @@ impl types::ProactiveSender for TelegramProactiveSender {
     fn send_proactive(&self, channel_context_id: &str, frame: &GatewayServerFrame) {
         let bot = self.bot.clone();
         let max_len = self.max_message_length;
+        let streak_updater = self.streak_updater.clone();
         let ctx = channel_context_id.to_owned();
         let frame = frame.clone();
         tokio::spawn(async move {
             let sender = TelegramProactiveSender {
                 bot,
                 max_message_length: max_len,
+                streak_updater,
             };
             if let Some(outcome) = sender.send_proactive_impl(&ctx, &frame).await {
                 debug!(
@@ -2211,5 +2276,245 @@ mod tests {
             output,
             "<b>bold</b> and <i>italic</i> and <code>code</code>"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Mock DeliveryStreakUpdater for streak-reporting tests
+    // -----------------------------------------------------------------------
+
+    #[derive(Debug, Clone)]
+    struct MockStreakUpdater {
+        calls: Arc<Mutex<Vec<(String, String, RouteDeliveryOutcome)>>>,
+        fail: bool,
+    }
+
+    impl MockStreakUpdater {
+        fn new() -> Self {
+            Self {
+                calls: Arc::new(Mutex::new(Vec::new())),
+                fail: false,
+            }
+        }
+
+        fn failing() -> Self {
+            Self {
+                calls: Arc::new(Mutex::new(Vec::new())),
+                fail: true,
+            }
+        }
+
+        fn calls(&self) -> Vec<(String, String, RouteDeliveryOutcome)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DeliveryStreakUpdater for MockStreakUpdater {
+        async fn report_outcome(
+            &self,
+            schedule_id: &str,
+            attempted_channel_context_id: &str,
+            outcome: &RouteDeliveryOutcome,
+        ) -> Result<(), types::SchedulerError> {
+            self.calls.lock().unwrap().push((
+                schedule_id.to_owned(),
+                attempted_channel_context_id.to_owned(),
+                outcome.clone(),
+            ));
+            if self.fail {
+                Err(types::SchedulerError::Store {
+                    message: "mock error".to_owned(),
+                })
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Streak-reporting tests (Phase 3)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn streak_text_primary_success_reports_outcome() {
+        let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_text_frame("Hello world");
+        sender.send_proactive_impl("-100123:42", &frame).await;
+
+        let calls = updater.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "sched-1");
+        assert_eq!(calls[0].1, "-100123:42");
+        assert_eq!(calls[0].2, RouteDeliveryOutcome::PrimaryRouteSucceeded);
+    }
+
+    #[tokio::test]
+    async fn streak_text_thread_not_found_reports_fallback_success() {
+        let (url, _log) = spawn_mock_tg(vec![tg_thread_not_found(), tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_text_frame("Hello world");
+        sender.send_proactive_impl("-100123:42", &frame).await;
+
+        let calls = updater.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "sched-1");
+        assert_eq!(calls[0].1, "-100123:42");
+        assert_eq!(
+            calls[0].2,
+            RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackSucceeded {
+                fallback_channel_context_id: "-100123".to_owned(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn streak_text_thread_not_found_fallback_failed_reports() {
+        // thread-not-found → HTML fallback fails → plain text fallback fails
+        let (url, _log) = spawn_mock_tg(vec![
+            tg_thread_not_found(),
+            tg_server_error(),
+            tg_server_error(),
+        ])
+        .await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_text_frame("Hello world");
+        sender.send_proactive_impl("-100123:42", &frame).await;
+
+        let calls = updater.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].2,
+            RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackFailed
+        );
+    }
+
+    #[tokio::test]
+    async fn streak_text_other_failure_reports_primary_success() {
+        // Non-thread error: HTML fails, plain text succeeds.
+        // send_text_batch returns PrimarySuccess (target_switched is false),
+        // so streak updater IS called with PrimaryRouteSucceeded — this is
+        // correct because the route is healthy (Step 8 semantics).
+        let (url, _log) = spawn_mock_tg(vec![
+            tg_bad_request("Bad Request: can't parse entities"),
+            tg_ok(),
+        ])
+        .await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_text_frame("Hello world");
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        // Delivery should succeed (plain text fallback on same target).
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        // Streak updater called with PrimaryRouteSucceeded (route is healthy).
+        let calls = updater.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].2, RouteDeliveryOutcome::PrimaryRouteSucceeded);
+    }
+
+    #[tokio::test]
+    async fn streak_media_does_not_report() {
+        // Media delivery succeeds but should NOT trigger streak updater.
+        let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_scheduled_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        assert!(updater.calls().is_empty(), "media should not report streak");
+    }
+
+    #[tokio::test]
+    async fn streak_non_scheduled_media_no_report() {
+        let (url, _log) = spawn_mock_tg(vec![]).await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_interactive_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, None);
+        assert!(updater.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn streak_no_updater_no_panic() {
+        // When streak_updater is None, delivery works without errors.
+        let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_text_frame("Hello world");
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+    }
+
+    #[tokio::test]
+    async fn streak_updater_error_does_not_block_delivery() {
+        let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::failing());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        let frame = make_text_frame("Hello world");
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        // Delivery should still complete successfully despite updater error.
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        // Updater was still called.
+        assert_eq!(updater.calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn streak_multi_media_plus_text_single_report() {
+        // Simulate a run: 2 media frames + 1 text frame.
+        // Streak updater should be called exactly once (for text only).
+        let (url, _log) = spawn_mock_tg(vec![
+            tg_ok(), // media 1
+            tg_ok(), // media 2
+            tg_ok(), // text
+        ])
+        .await;
+        let bot = Bot::new_url(&url);
+        let updater = Arc::new(MockStreakUpdater::new());
+        let sender =
+            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+
+        // Media frames
+        let media1 = make_scheduled_media_frame();
+        let media2 = make_scheduled_media_frame();
+        let text = make_text_frame("Summary");
+
+        sender.send_proactive_impl("-100123:42", &media1).await;
+        sender.send_proactive_impl("-100123:42", &media2).await;
+        sender.send_proactive_impl("-100123:42", &text).await;
+
+        let calls = updater.calls();
+        assert_eq!(calls.len(), 1, "streak updater should be called once (text only)");
+        assert_eq!(calls[0].0, "sched-1");
     }
 }
