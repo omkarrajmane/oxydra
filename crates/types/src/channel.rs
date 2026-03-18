@@ -177,6 +177,9 @@ pub struct GatewayMediaAttachment {
     pub request_id: String,
     pub session: GatewaySession,
     pub attachment: MediaAttachment,
+    /// Set by the scheduler for scheduled media; `None` for interactive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_id: Option<String>,
 }
 
 pub type ChannelListenStream = mpsc::Receiver<Result<ChannelInboundEvent, ChannelError>>;

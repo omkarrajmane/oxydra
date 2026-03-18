@@ -254,6 +254,7 @@ impl SchedulerExecutor {
                                 session_id: session_id.to_owned(),
                             },
                             attachment: attachment.clone(),
+                            schedule_id: Some(schedule.schedule_id.clone()),
                         }),
                     )
                     .await;

@@ -1142,6 +1142,7 @@ impl GatewayServer {
                                             request_id: send_turn.request_id.clone(),
                                             session: session.gateway_session(),
                                             attachment,
+                                            schedule_id: None,
                                         }));
                                     }
                                     _ => {}

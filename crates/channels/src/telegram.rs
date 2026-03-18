@@ -845,162 +845,30 @@ impl TelegramAdapter {
         thread_id: Option<i32>,
         attachment: &MediaAttachment,
     ) {
-        // Write the file data to a temporary file so frankenstein can upload it.
-        let file_name = attachment.file_name.as_deref().unwrap_or("attachment");
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("oxydra-tg-{}-{}", uuid::Uuid::new_v4(), file_name));
-
-        if let Err(e) = tokio::fs::write(&temp_path, &attachment.data).await {
-            warn!(error = %e, "failed to write temp file for telegram media upload");
-            // Fallback: send a text message about the failure.
-            self.send_reply(
-                chat_id,
-                thread_id,
-                &format!("📎 [Failed to send media: {}]", e),
-            )
-            .await;
-            return;
-        }
-
-        let file_upload: PathBuf = temp_path.clone();
-        let caption = attachment.caption.clone();
-        let result = match attachment.media_type {
-            MediaType::Photo => {
-                let params = SendPhotoParams {
-                    chat_id: ChatId::Integer(chat_id),
-                    photo: file_upload.into(),
-                    caption,
-                    message_thread_id: thread_id,
-                    business_connection_id: None,
-                    direct_messages_topic_id: None,
-                    parse_mode: None,
-                    caption_entities: None,
-                    show_caption_above_media: None,
-                    has_spoiler: None,
-                    disable_notification: None,
-                    protect_content: None,
-                    allow_paid_broadcast: None,
-                    message_effect_id: None,
-                    suggested_post_parameters: None,
-                    reply_parameters: None,
-                    reply_markup: None,
-                };
-                self.bot.send_photo(&params).await.map(|_| ())
+        match upload_media_to_chat(&self.bot, chat_id, thread_id, attachment).await {
+            Ok(()) => {}
+            Err(MediaUploadError::Io(e)) => {
+                warn!(error = %e, "failed to write temp file for telegram media upload");
+                self.send_reply(
+                    chat_id,
+                    thread_id,
+                    &format!("📎 [Failed to send media: {}]", e),
+                )
+                .await;
             }
-            MediaType::Audio => {
-                let params = SendAudioParams {
-                    chat_id: ChatId::Integer(chat_id),
-                    audio: file_upload.into(),
-                    caption,
-                    message_thread_id: thread_id,
-                    business_connection_id: None,
-                    direct_messages_topic_id: None,
-                    parse_mode: None,
-                    caption_entities: None,
-                    duration: None,
-                    performer: None,
-                    title: None,
-                    thumbnail: None,
-                    disable_notification: None,
-                    protect_content: None,
-                    allow_paid_broadcast: None,
-                    message_effect_id: None,
-                    suggested_post_parameters: None,
-                    reply_parameters: None,
-                    reply_markup: None,
-                };
-                self.bot.send_audio(&params).await.map(|_| ())
+            Err(MediaUploadError::Api(e)) => {
+                warn!(
+                    error = %e,
+                    media_type = ?attachment.media_type,
+                    chat_id,
+                    "failed to send telegram media"
+                );
+                let fallback = format!(
+                    "📎 [Tried to send a {:?} but the upload failed: {}]",
+                    attachment.media_type, e
+                );
+                self.send_reply(chat_id, thread_id, &fallback).await;
             }
-            MediaType::Document => {
-                let params = SendDocumentParams {
-                    chat_id: ChatId::Integer(chat_id),
-                    document: file_upload.into(),
-                    caption,
-                    message_thread_id: thread_id,
-                    business_connection_id: None,
-                    direct_messages_topic_id: None,
-                    parse_mode: None,
-                    caption_entities: None,
-                    thumbnail: None,
-                    disable_content_type_detection: None,
-                    disable_notification: None,
-                    protect_content: None,
-                    allow_paid_broadcast: None,
-                    message_effect_id: None,
-                    suggested_post_parameters: None,
-                    reply_parameters: None,
-                    reply_markup: None,
-                };
-                self.bot.send_document(&params).await.map(|_| ())
-            }
-            MediaType::Voice => {
-                let params = SendVoiceParams {
-                    chat_id: ChatId::Integer(chat_id),
-                    voice: file_upload.into(),
-                    caption,
-                    message_thread_id: thread_id,
-                    business_connection_id: None,
-                    direct_messages_topic_id: None,
-                    parse_mode: None,
-                    caption_entities: None,
-                    duration: None,
-                    disable_notification: None,
-                    protect_content: None,
-                    allow_paid_broadcast: None,
-                    message_effect_id: None,
-                    suggested_post_parameters: None,
-                    reply_parameters: None,
-                    reply_markup: None,
-                };
-                self.bot.send_voice(&params).await.map(|_| ())
-            }
-            MediaType::Video => {
-                let params = SendVideoParams {
-                    chat_id: ChatId::Integer(chat_id),
-                    video: file_upload.into(),
-                    caption,
-                    message_thread_id: thread_id,
-                    business_connection_id: None,
-                    direct_messages_topic_id: None,
-                    parse_mode: None,
-                    caption_entities: None,
-                    duration: None,
-                    width: None,
-                    height: None,
-                    thumbnail: None,
-                    cover: None,
-                    start_timestamp: None,
-                    show_caption_above_media: None,
-                    has_spoiler: None,
-                    supports_streaming: None,
-                    disable_notification: None,
-                    protect_content: None,
-                    allow_paid_broadcast: None,
-                    message_effect_id: None,
-                    suggested_post_parameters: None,
-                    reply_parameters: None,
-                    reply_markup: None,
-                };
-                self.bot.send_video(&params).await.map(|_| ())
-            }
-        };
-
-        // Clean up temp file.
-        let _ = tokio::fs::remove_file(&temp_path).await;
-
-        if let Err(e) = result {
-            warn!(
-                error = %e,
-                media_type = ?attachment.media_type,
-                chat_id,
-                "failed to send telegram media"
-            );
-            // Fallback: send a text notification about the failure.
-            let fallback = format!(
-                "📎 [Tried to send a {:?} but the upload failed: {}]",
-                attachment.media_type, e
-            );
-            self.send_reply(chat_id, thread_id, &fallback).await;
         }
     }
 }
@@ -1438,6 +1306,337 @@ fn html_escape(s: &str) -> String {
 // Telegram Proactive Sender — for origin-only scheduler notifications
 // ---------------------------------------------------------------------------
 
+/// Outcome of a single proactive delivery batch (text or media).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProactiveDeliveryOutcome {
+    /// Primary target delivery succeeded.
+    PrimarySuccess,
+    /// Primary failed with thread-not-found; fallback to main chat succeeded.
+    ThreadNotFoundFallbackSuccess,
+    /// Primary failed with thread-not-found; fallback also failed.
+    ThreadNotFoundFallbackFailed,
+    /// Primary failed with a non-thread error.
+    OtherFailure,
+}
+
+/// Error from attempting to upload media to Telegram.
+#[derive(Debug)]
+enum MediaUploadError {
+    /// Local I/O failure (temp file write). Not retryable via target switch.
+    Io(std::io::Error),
+    /// Telegram API failure. May be thread-not-found (retryable) or other.
+    Api(String),
+}
+
+/// Check if a Telegram error description indicates a deleted forum topic.
+fn is_thread_not_found_error(err: &str) -> bool {
+    err.to_lowercase().contains("message thread not found")
+}
+
+/// Plain text notice sent when scheduled media cannot be delivered.
+const MEDIA_FALLBACK_NOTICE: &str =
+    "[Scheduled attachment could not be delivered — upload failed after retry]";
+
+/// Send an HTML message to a Telegram chat. Returns `Ok(())` on success or the
+/// error description string on failure.
+async fn send_message_html(
+    bot: &Bot,
+    chat_id: i64,
+    thread_id: Option<i32>,
+    html: &str,
+) -> Result<(), String> {
+    let params = SendMessageParams {
+        chat_id: ChatId::Integer(chat_id),
+        text: html.to_owned(),
+        message_thread_id: thread_id,
+        parse_mode: Some(ParseMode::Html),
+        business_connection_id: None,
+        direct_messages_topic_id: None,
+        entities: None,
+        link_preview_options: None,
+        disable_notification: None,
+        protect_content: None,
+        allow_paid_broadcast: None,
+        message_effect_id: None,
+        suggested_post_parameters: None,
+        reply_parameters: None,
+        reply_markup: None,
+    };
+    bot.send_message(&params)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Send a plain-text message to a Telegram chat. Returns `Ok(())` on success or
+/// the error description string on failure.
+async fn send_message_plain(
+    bot: &Bot,
+    chat_id: i64,
+    thread_id: Option<i32>,
+    text: &str,
+) -> Result<(), String> {
+    let params = SendMessageParams {
+        chat_id: ChatId::Integer(chat_id),
+        text: text.to_owned(),
+        message_thread_id: thread_id,
+        parse_mode: None,
+        business_connection_id: None,
+        direct_messages_topic_id: None,
+        entities: None,
+        link_preview_options: None,
+        disable_notification: None,
+        protect_content: None,
+        allow_paid_broadcast: None,
+        message_effect_id: None,
+        suggested_post_parameters: None,
+        reply_parameters: None,
+        reply_markup: None,
+    };
+    bot.send_message(&params)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Upload a media attachment to a Telegram chat. Shared between the interactive
+/// adapter and the proactive sender.
+async fn upload_media_to_chat(
+    bot: &Bot,
+    chat_id: i64,
+    thread_id: Option<i32>,
+    attachment: &MediaAttachment,
+) -> Result<(), MediaUploadError> {
+    let file_name = attachment.file_name.as_deref().unwrap_or("attachment");
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("oxydra-tg-{}-{}", uuid::Uuid::new_v4(), file_name));
+
+    tokio::fs::write(&temp_path, &attachment.data)
+        .await
+        .map_err(MediaUploadError::Io)?;
+
+    let file_upload: PathBuf = temp_path.clone();
+    let caption = attachment.caption.clone();
+    let result = match attachment.media_type {
+        MediaType::Photo => {
+            let params = SendPhotoParams {
+                chat_id: ChatId::Integer(chat_id),
+                photo: file_upload.into(),
+                caption,
+                message_thread_id: thread_id,
+                business_connection_id: None,
+                direct_messages_topic_id: None,
+                parse_mode: None,
+                caption_entities: None,
+                show_caption_above_media: None,
+                has_spoiler: None,
+                disable_notification: None,
+                protect_content: None,
+                allow_paid_broadcast: None,
+                message_effect_id: None,
+                suggested_post_parameters: None,
+                reply_parameters: None,
+                reply_markup: None,
+            };
+            bot.send_photo(&params).await.map(|_| ())
+        }
+        MediaType::Audio => {
+            let params = SendAudioParams {
+                chat_id: ChatId::Integer(chat_id),
+                audio: file_upload.into(),
+                caption,
+                message_thread_id: thread_id,
+                business_connection_id: None,
+                direct_messages_topic_id: None,
+                parse_mode: None,
+                caption_entities: None,
+                duration: None,
+                performer: None,
+                title: None,
+                thumbnail: None,
+                disable_notification: None,
+                protect_content: None,
+                allow_paid_broadcast: None,
+                message_effect_id: None,
+                suggested_post_parameters: None,
+                reply_parameters: None,
+                reply_markup: None,
+            };
+            bot.send_audio(&params).await.map(|_| ())
+        }
+        MediaType::Document => {
+            let params = SendDocumentParams {
+                chat_id: ChatId::Integer(chat_id),
+                document: file_upload.into(),
+                caption,
+                message_thread_id: thread_id,
+                business_connection_id: None,
+                direct_messages_topic_id: None,
+                parse_mode: None,
+                caption_entities: None,
+                thumbnail: None,
+                disable_content_type_detection: None,
+                disable_notification: None,
+                protect_content: None,
+                allow_paid_broadcast: None,
+                message_effect_id: None,
+                suggested_post_parameters: None,
+                reply_parameters: None,
+                reply_markup: None,
+            };
+            bot.send_document(&params).await.map(|_| ())
+        }
+        MediaType::Voice => {
+            let params = SendVoiceParams {
+                chat_id: ChatId::Integer(chat_id),
+                voice: file_upload.into(),
+                caption,
+                message_thread_id: thread_id,
+                business_connection_id: None,
+                direct_messages_topic_id: None,
+                parse_mode: None,
+                caption_entities: None,
+                duration: None,
+                disable_notification: None,
+                protect_content: None,
+                allow_paid_broadcast: None,
+                message_effect_id: None,
+                suggested_post_parameters: None,
+                reply_parameters: None,
+                reply_markup: None,
+            };
+            bot.send_voice(&params).await.map(|_| ())
+        }
+        MediaType::Video => {
+            let params = SendVideoParams {
+                chat_id: ChatId::Integer(chat_id),
+                video: file_upload.into(),
+                caption,
+                message_thread_id: thread_id,
+                business_connection_id: None,
+                direct_messages_topic_id: None,
+                parse_mode: None,
+                caption_entities: None,
+                duration: None,
+                width: None,
+                height: None,
+                thumbnail: None,
+                cover: None,
+                start_timestamp: None,
+                show_caption_above_media: None,
+                has_spoiler: None,
+                supports_streaming: None,
+                disable_notification: None,
+                protect_content: None,
+                allow_paid_broadcast: None,
+                message_effect_id: None,
+                suggested_post_parameters: None,
+                reply_parameters: None,
+                reply_markup: None,
+            };
+            bot.send_video(&params).await.map(|_| ())
+        }
+    };
+
+    // Clean up temp file (best-effort).
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    result.map_err(|e| MediaUploadError::Api(e.to_string()))
+}
+
+/// Send a batch of text chunks to a Telegram chat with thread-not-found fallback.
+async fn send_text_batch(
+    bot: &Bot,
+    chat_id: i64,
+    thread_id: Option<i32>,
+    message: &str,
+    max_len: usize,
+) -> ProactiveDeliveryOutcome {
+    let chunks = split_message(message, max_len);
+    let mut effective_thread_id = thread_id;
+    let mut target_switched = false;
+    let mut fallback_failed = false;
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let html = markdown_to_telegram_html(chunk);
+
+        let result = send_message_html(bot, chat_id, effective_thread_id, &html).await;
+        match result {
+            Ok(()) => {}
+            Err(e) if i == 0 && is_thread_not_found_error(&e) && thread_id.is_some() => {
+                // Thread is deleted — switch to main chat for the entire batch.
+                effective_thread_id = None;
+                target_switched = true;
+                debug!(
+                    error = %e,
+                    chat_id,
+                    "proactive send: thread not found, retrying to main chat"
+                );
+                // Retry chunk 0 on fallback target.
+                if send_message_html(bot, chat_id, None, &html).await.is_err() {
+                    // Try plain text as last resort.
+                    if send_message_plain(bot, chat_id, None, chunk).await.is_err() {
+                        fallback_failed = true;
+                    }
+                }
+            }
+            Err(e) => {
+                // Non-thread HTML failure → plain text fallback (same target).
+                let _ = send_message_plain(bot, chat_id, effective_thread_id, chunk).await;
+                debug!(error = %e, "proactive html send failed; used plain text fallback");
+            }
+        }
+    }
+
+    if target_switched {
+        if fallback_failed {
+            ProactiveDeliveryOutcome::ThreadNotFoundFallbackFailed
+        } else {
+            ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess
+        }
+    } else {
+        ProactiveDeliveryOutcome::PrimarySuccess
+    }
+}
+
+/// Send a media attachment proactively with thread-not-found fallback.
+async fn send_media_proactive(
+    bot: &Bot,
+    chat_id: i64,
+    thread_id: Option<i32>,
+    attachment: &MediaAttachment,
+) -> ProactiveDeliveryOutcome {
+    match upload_media_to_chat(bot, chat_id, thread_id, attachment).await {
+        Ok(()) => ProactiveDeliveryOutcome::PrimarySuccess,
+        Err(MediaUploadError::Io(e)) => {
+            warn!(error = %e, "proactive media: temp file write failed");
+            ProactiveDeliveryOutcome::OtherFailure
+        }
+        Err(MediaUploadError::Api(e)) if is_thread_not_found_error(&e) && thread_id.is_some() => {
+            debug!(
+                error = %e,
+                chat_id,
+                "proactive media: thread not found, retrying to main chat"
+            );
+            // Retry to main chat.
+            match upload_media_to_chat(bot, chat_id, None, attachment).await {
+                Ok(()) => ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess,
+                Err(_) => {
+                    // Send text notice as last resort.
+                    let _ = send_message_plain(bot, chat_id, None, MEDIA_FALLBACK_NOTICE).await;
+                    ProactiveDeliveryOutcome::ThreadNotFoundFallbackFailed
+                }
+            }
+        }
+        Err(MediaUploadError::Api(e)) => {
+            warn!(error = %e, "proactive media: upload failed");
+            // Non-thread API failure — try text notice.
+            let _ = send_message_plain(bot, chat_id, thread_id, MEDIA_FALLBACK_NOTICE).await;
+            ProactiveDeliveryOutcome::OtherFailure
+        }
+    }
+}
+
 /// Sends proactive (scheduler-originated) notifications to Telegram chats.
 pub struct TelegramProactiveSender {
     bot: Bot,
@@ -1451,71 +1650,63 @@ impl TelegramProactiveSender {
             max_message_length,
         }
     }
+
+    /// For tests: construct with a pre-built Bot (e.g. `Bot::new_url`).
+    #[cfg(test)]
+    pub fn new_with_bot(bot: Bot, max_message_length: usize) -> Self {
+        Self {
+            bot,
+            max_message_length,
+        }
+    }
+
+    /// Core async implementation. Called by both the sync trait method and tests.
+    async fn send_proactive_impl(
+        &self,
+        channel_context_id: &str,
+        frame: &GatewayServerFrame,
+    ) -> Option<ProactiveDeliveryOutcome> {
+        let (chat_id, thread_id) = parse_channel_context_id(channel_context_id)?;
+
+        match frame {
+            GatewayServerFrame::ScheduledNotification(notif) => {
+                let outcome = send_text_batch(
+                    &self.bot,
+                    chat_id,
+                    thread_id,
+                    &notif.message,
+                    self.max_message_length,
+                )
+                .await;
+                Some(outcome)
+            }
+            GatewayServerFrame::MediaAttachment(media) if media.schedule_id.is_some() => {
+                let outcome =
+                    send_media_proactive(&self.bot, chat_id, thread_id, &media.attachment).await;
+                Some(outcome)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl types::ProactiveSender for TelegramProactiveSender {
     fn send_proactive(&self, channel_context_id: &str, frame: &GatewayServerFrame) {
-        let message = match frame {
-            GatewayServerFrame::ScheduledNotification(notif) => notif.message.clone(),
-            _ => return,
-        };
-
-        let (chat_id, thread_id) = match parse_channel_context_id(channel_context_id) {
-            Some(parsed) => parsed,
-            None => {
-                warn!(
-                    channel_context_id = %channel_context_id,
-                    "telegram proactive sender: failed to parse channel_context_id"
-                );
-                return;
-            }
-        };
-
         let bot = self.bot.clone();
         let max_len = self.max_message_length;
+        let ctx = channel_context_id.to_owned();
+        let frame = frame.clone();
         tokio::spawn(async move {
-            let chunks = split_message(&message, max_len);
-            for chunk in chunks {
-                let html_text = markdown_to_telegram_html(chunk);
-                let params = SendMessageParams {
-                    chat_id: ChatId::Integer(chat_id),
-                    text: html_text,
-                    message_thread_id: thread_id,
-                    parse_mode: Some(ParseMode::Html),
-                    business_connection_id: None,
-                    direct_messages_topic_id: None,
-                    entities: None,
-                    link_preview_options: None,
-                    disable_notification: None,
-                    protect_content: None,
-                    allow_paid_broadcast: None,
-                    message_effect_id: None,
-                    suggested_post_parameters: None,
-                    reply_parameters: None,
-                    reply_markup: None,
-                };
-                if let Err(e) = bot.send_message(&params).await {
-                    // Fallback to plain text.
-                    let fallback = SendMessageParams {
-                        chat_id: ChatId::Integer(chat_id),
-                        text: chunk.to_string(),
-                        message_thread_id: thread_id,
-                        parse_mode: None,
-                        business_connection_id: None,
-                        direct_messages_topic_id: None,
-                        entities: None,
-                        link_preview_options: None,
-                        disable_notification: None,
-                        protect_content: None,
-                        allow_paid_broadcast: None,
-                        message_effect_id: None,
-                        suggested_post_parameters: None,
-                        reply_parameters: None,
-                        reply_markup: None,
-                    };
-                    let _ = bot.send_message(&fallback).await;
-                    debug!(error = %e, "proactive html send failed; used plain text fallback");
-                }
+            let sender = TelegramProactiveSender {
+                bot,
+                max_message_length: max_len,
+            };
+            if let Some(outcome) = sender.send_proactive_impl(&ctx, &frame).await {
+                debug!(
+                    ?outcome,
+                    channel_context_id = %ctx,
+                    "proactive delivery completed"
+                );
             }
         });
     }
@@ -1601,6 +1792,304 @@ fn extract_retry_after(error: &frankenstein::Error) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+    use types::{GatewayMediaAttachment, GatewayScheduledNotification, GatewaySession};
+
+    // -----------------------------------------------------------------------
+    // Mock Telegram server
+    // -----------------------------------------------------------------------
+
+    /// Spawn a mock Telegram Bot API server.
+    /// Returns `(base_url, request_log)`.
+    /// `responses` is consumed in order; once exhausted the server returns 500.
+    async fn spawn_mock_tg(
+        responses: Vec<(axum::http::StatusCode, serde_json::Value)>,
+    ) -> (String, Arc<Mutex<Vec<(String, String)>>>) {
+        use axum::{Router, body::Bytes, extract::State, routing::post};
+
+        type Log = Arc<Mutex<Vec<(String, String)>>>;
+
+        #[derive(Clone)]
+        struct MockState {
+            responses: Arc<Mutex<Vec<(axum::http::StatusCode, serde_json::Value)>>>,
+            log: Log,
+        }
+
+        async fn handler(
+            axum::extract::Path((_token, method)): axum::extract::Path<(String, String)>,
+            State(state): State<MockState>,
+            body: Bytes,
+        ) -> axum::response::Response<String> {
+            let body_str = String::from_utf8_lossy(&body).to_string();
+            state.log.lock().unwrap().push((method, body_str));
+
+            let mut q = state.responses.lock().unwrap();
+            let (status, json) = if q.is_empty() {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    serde_json::json!({"ok": false, "description": "no more mock responses"}),
+                )
+            } else {
+                q.remove(0)
+            };
+            axum::response::Response::builder()
+                .status(status)
+                .header("Content-Type", "application/json")
+                .body(json.to_string())
+                .unwrap()
+        }
+
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        let state = MockState {
+            responses: Arc::new(Mutex::new(responses)),
+            log: log.clone(),
+        };
+
+        // Use `/*method` to capture all API method paths, e.g. /botTOKEN/sendMessage
+        let app = Router::new()
+            .route("/{token}/{method}", post(handler))
+            .with_state(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let base_url = format!("http://127.0.0.1:{}/botTEST_TOKEN", addr.port());
+        (base_url, log)
+    }
+
+    /// A success response that looks like Telegram's `sendMessage` result.
+    fn tg_ok() -> (axum::http::StatusCode, serde_json::Value) {
+        (
+            axum::http::StatusCode::OK,
+            serde_json::json!({
+                "ok": true,
+                "result": {
+                    "message_id": 1,
+                    "date": 0,
+                    "chat": {"id": 123, "type": "private"}
+                }
+            }),
+        )
+    }
+
+    /// A thread-not-found error response.
+    fn tg_thread_not_found() -> (axum::http::StatusCode, serde_json::Value) {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            serde_json::json!({
+                "ok": false,
+                "description": "Bad Request: message thread not found"
+            }),
+        )
+    }
+
+    /// A generic error (non-thread) response.
+    fn tg_bad_request(msg: &str) -> (axum::http::StatusCode, serde_json::Value) {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            serde_json::json!({
+                "ok": false,
+                "description": msg
+            }),
+        )
+    }
+
+    /// A server error (500) response.
+    fn tg_server_error() -> (axum::http::StatusCode, serde_json::Value) {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "ok": false,
+                "description": "Internal Server Error"
+            }),
+        )
+    }
+
+    fn make_text_frame(msg: &str) -> GatewayServerFrame {
+        GatewayServerFrame::ScheduledNotification(GatewayScheduledNotification {
+            schedule_id: "sched-1".to_owned(),
+            schedule_name: Some("test".to_owned()),
+            message: msg.to_owned(),
+        })
+    }
+
+    fn make_scheduled_media_frame() -> GatewayServerFrame {
+        GatewayServerFrame::MediaAttachment(GatewayMediaAttachment {
+            request_id: "req-1".to_owned(),
+            session: GatewaySession {
+                user_id: "user-1".to_owned(),
+                session_id: "session-1".to_owned(),
+            },
+            attachment: MediaAttachment {
+                file_path: "/shared/photo.jpg".to_owned(),
+                media_type: MediaType::Photo,
+                caption: Some("test photo".to_owned()),
+                data: vec![0xFF, 0xD8, 0xFF],
+                file_name: Some("photo.jpg".to_owned()),
+            },
+            schedule_id: Some("sched-1".to_owned()),
+        })
+    }
+
+    fn make_interactive_media_frame() -> GatewayServerFrame {
+        GatewayServerFrame::MediaAttachment(GatewayMediaAttachment {
+            request_id: "req-2".to_owned(),
+            session: GatewaySession {
+                user_id: "user-1".to_owned(),
+                session_id: "session-1".to_owned(),
+            },
+            attachment: MediaAttachment {
+                file_path: "/shared/photo.jpg".to_owned(),
+                media_type: MediaType::Photo,
+                caption: None,
+                data: vec![0xFF, 0xD8, 0xFF],
+                file_name: None,
+            },
+            schedule_id: None,
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Proactive sender tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn proactive_text_primary_success() {
+        let (url, log) = spawn_mock_tg(vec![tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_text_frame("Hello world");
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 1);
+        assert!(log[0].0.contains("sendMessage"));
+        // Should contain parse_mode (HTML)
+        assert!(log[0].1.contains("parse_mode"));
+    }
+
+    #[tokio::test]
+    async fn proactive_text_html_failure_falls_back_to_plain() {
+        // First call: HTML fails (non-thread error). Second call: plain text succeeds.
+        let (url, log) = spawn_mock_tg(vec![
+            tg_bad_request("Bad Request: can't parse entities"),
+            tg_ok(),
+        ])
+        .await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_text_frame("Hello world");
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 2);
+        // Second call should NOT have parse_mode (plain text)
+        assert!(!log[1].1.contains("parse_mode"));
+    }
+
+    #[tokio::test]
+    async fn proactive_text_thread_not_found_retries_main_chat() {
+        // First: thread-not-found. Second: success on main chat.
+        let (url, log) = spawn_mock_tg(vec![tg_thread_not_found(), tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_text_frame("Hello world");
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(
+            outcome,
+            Some(ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess)
+        );
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 2);
+        // Second request must NOT contain message_thread_id (omitted by serde).
+        assert!(
+            !log[1].1.contains("message_thread_id"),
+            "fallback request should omit message_thread_id, got: {}",
+            log[1].1
+        );
+    }
+
+    #[tokio::test]
+    async fn proactive_media_success() {
+        let (url, log) = spawn_mock_tg(vec![tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_scheduled_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 1);
+        assert!(log[0].0.contains("sendPhoto"));
+    }
+
+    #[tokio::test]
+    async fn proactive_media_thread_not_found_retries_main_chat() {
+        // First sendPhoto: thread-not-found. Second sendPhoto: success.
+        let (url, log) = spawn_mock_tg(vec![tg_thread_not_found(), tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_scheduled_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(
+            outcome,
+            Some(ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess)
+        );
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 2);
+        // Both should be sendPhoto
+        assert!(log[0].0.contains("sendPhoto"));
+        assert!(log[1].0.contains("sendPhoto"));
+    }
+
+    #[tokio::test]
+    async fn proactive_media_total_failure_sends_text_notice() {
+        // sendPhoto fails with 500, then sendMessage for notice succeeds.
+        let (url, log) = spawn_mock_tg(vec![tg_server_error(), tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_scheduled_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::OtherFailure));
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 2);
+        // First is sendPhoto, second is sendMessage with the fallback notice.
+        assert!(log[0].0.contains("sendPhoto"));
+        assert!(log[1].0.contains("sendMessage"));
+        assert!(log[1].1.contains(MEDIA_FALLBACK_NOTICE));
+    }
+
+    #[tokio::test]
+    async fn proactive_non_scheduled_media_ignored() {
+        let (url, log) = spawn_mock_tg(vec![]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_interactive_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, None);
+        let log = log.lock().unwrap();
+        assert!(log.is_empty(), "no HTTP requests should be made");
+    }
+
+    // -----------------------------------------------------------------------
+    // Existing tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn channel_context_id_regular_chat() {

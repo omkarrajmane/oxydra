@@ -2362,6 +2362,7 @@ fn make_media_frame() -> GatewayServerFrame {
             data: vec![0xFF, 0xD8, 0xFF],
             file_name: None,
         },
+        schedule_id: None,
     })
 }
 

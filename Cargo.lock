@@ -722,6 +722,7 @@ name = "channels"
 version = "0.2.9"
 dependencies = [
  "async-trait",
+ "axum 0.8.8",
  "frankenstein",
  "gateway",
  "reqwest",
