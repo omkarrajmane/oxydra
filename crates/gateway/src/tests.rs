@@ -1,12 +1,17 @@
 use std::{collections::VecDeque, net::SocketAddr, time::Duration};
 
 use super::*;
+use runtime::SchedulerNotifier;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message as WsMessage,
 };
-use types::{GatewayConfig, InlineMedia, ProviderError, ProviderId, StreamItem};
+use types::{
+    GatewayConfig, GatewayMediaAttachment, GatewayScheduledNotification, GatewaySession,
+    InlineMedia, MediaAttachment, MediaType, NotificationPolicy, ProviderError, ProviderId,
+    ScheduleCadence, ScheduleDefinition, ScheduleStatus, StreamItem,
+};
 use url::Url;
 
 type ClientSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
@@ -2307,4 +2312,305 @@ async fn switch_session_supports_prefix_matching() {
     }
 
     server_task.abort();
+}
+
+// ---------------------------------------------------------------------------
+// Notification routing tests (Phase 1: TUI fallback fan-out)
+// ---------------------------------------------------------------------------
+
+fn make_tui_schedule(user_id: &str, session_id: &str) -> ScheduleDefinition {
+    ScheduleDefinition {
+        schedule_id: "sched-1".to_owned(),
+        user_id: user_id.to_owned(),
+        name: None,
+        goal: "test".to_owned(),
+        cadence: ScheduleCadence::Once {
+            at: "2026-01-01T00:00:00Z".to_owned(),
+        },
+        notification_policy: NotificationPolicy::Always,
+        status: ScheduleStatus::Active,
+        created_at: "2026-01-01T00:00:00Z".to_owned(),
+        updated_at: "2026-01-01T00:00:00Z".to_owned(),
+        next_run_at: None,
+        last_run_at: None,
+        last_run_status: None,
+        consecutive_failures: 0,
+        channel_id: Some("tui".to_owned()),
+        channel_context_id: Some(session_id.to_owned()),
+    }
+}
+
+fn make_notification_frame() -> GatewayServerFrame {
+    GatewayServerFrame::ScheduledNotification(GatewayScheduledNotification {
+        schedule_id: "sched-1".to_owned(),
+        schedule_name: None,
+        message: "hello from scheduler".to_owned(),
+    })
+}
+
+fn make_media_frame() -> GatewayServerFrame {
+    GatewayServerFrame::MediaAttachment(GatewayMediaAttachment {
+        request_id: "req-media-1".to_owned(),
+        session: GatewaySession {
+            user_id: "user-1".to_owned(),
+            session_id: "sched-session".to_owned(),
+        },
+        attachment: MediaAttachment {
+            file_path: "/shared/photo.jpg".to_owned(),
+            media_type: MediaType::Photo,
+            caption: Some("test photo".to_owned()),
+            data: vec![0xFF, 0xD8, 0xFF],
+            file_name: None,
+        },
+    })
+}
+
+/// Insert a session into a GatewayServer's user state for testing.
+/// Returns a broadcast receiver if `connected` is true (simulating an active subscriber).
+async fn insert_test_session(
+    gateway: &GatewayServer,
+    user_id: &str,
+    session_id: &str,
+    channel_origin: &str,
+    parent_session_id: Option<&str>,
+    connected: bool,
+) -> Option<broadcast::Receiver<GatewayServerFrame>> {
+    let user = gateway.get_or_create_user(user_id).await;
+    let session = Arc::new(SessionState::new(
+        session_id.to_owned(),
+        user_id.to_owned(),
+        "default".to_owned(),
+        parent_session_id.map(|s| s.to_owned()),
+        channel_origin.to_owned(),
+    ));
+    let rx = if connected {
+        Some(session.events.subscribe())
+    } else {
+        None
+    };
+    user.sessions
+        .write()
+        .await
+        .insert(session_id.to_owned(), session);
+    rx
+}
+
+fn make_test_gateway() -> Arc<GatewayServer> {
+    let runner = Arc::new(ScriptedTurnRunner::new(vec![]));
+    Arc::new(GatewayServer::new(runner))
+}
+
+#[tokio::test]
+async fn test_notify_tui_origin_connected() {
+    let gateway = make_test_gateway();
+    let mut origin_rx = insert_test_session(&gateway, "user-1", "sess-origin", "tui", None, true)
+        .await
+        .unwrap();
+    let mut other_rx = insert_test_session(&gateway, "user-1", "sess-other", "tui", None, true)
+        .await
+        .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-origin");
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(
+        origin_rx.try_recv().is_ok(),
+        "origin should receive the frame"
+    );
+    assert!(
+        other_rx.try_recv().is_err(),
+        "other session should NOT receive the frame"
+    );
+}
+
+#[tokio::test]
+async fn test_notify_tui_origin_disconnected_fanout() {
+    let gateway = make_test_gateway();
+    // Origin exists but no subscriber (connected=false).
+    insert_test_session(&gateway, "user-1", "sess-origin", "tui", None, false).await;
+    let mut fb1_rx = insert_test_session(&gateway, "user-1", "sess-fb1", "tui", None, true)
+        .await
+        .unwrap();
+    let mut fb2_rx = insert_test_session(&gateway, "user-1", "sess-fb2", "tui", None, true)
+        .await
+        .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-origin");
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(
+        fb1_rx.try_recv().is_ok(),
+        "fallback session 1 should receive"
+    );
+    assert!(
+        fb2_rx.try_recv().is_ok(),
+        "fallback session 2 should receive"
+    );
+}
+
+#[tokio::test]
+async fn test_notify_tui_origin_evicted_fanout() {
+    let gateway = make_test_gateway();
+    // Origin not in sessions map at all — create user state with only fallback sessions.
+    let mut fb1_rx = insert_test_session(&gateway, "user-1", "sess-fb1", "tui", None, true)
+        .await
+        .unwrap();
+    let mut fb2_rx = insert_test_session(&gateway, "user-1", "sess-fb2", "tui", None, true)
+        .await
+        .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-gone");
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(
+        fb1_rx.try_recv().is_ok(),
+        "fallback session 1 should receive"
+    );
+    assert!(
+        fb2_rx.try_recv().is_ok(),
+        "fallback session 2 should receive"
+    );
+}
+
+#[tokio::test]
+async fn test_notify_tui_only_subagent_sessions() {
+    let gateway = make_test_gateway();
+    // Origin disconnected.
+    insert_test_session(&gateway, "user-1", "sess-origin", "tui", None, false).await;
+    // Only connected sessions are subagent sessions (have parent).
+    let mut sub_rx = insert_test_session(
+        &gateway,
+        "user-1",
+        "sess-sub",
+        "tui",
+        Some("sess-origin"),
+        true,
+    )
+    .await
+    .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-origin");
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(
+        sub_rx.try_recv().is_err(),
+        "subagent session should NOT receive"
+    );
+}
+
+#[tokio::test]
+async fn test_notify_tui_mixed_channel_origins() {
+    let gateway = make_test_gateway();
+    // Origin disconnected.
+    insert_test_session(&gateway, "user-1", "sess-origin", "tui", None, false).await;
+    // One TUI fallback, one Telegram-origin session.
+    let mut tui_rx = insert_test_session(&gateway, "user-1", "sess-tui", "tui", None, true)
+        .await
+        .unwrap();
+    let mut tg_rx = insert_test_session(&gateway, "user-1", "sess-tg", "telegram", None, true)
+        .await
+        .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-origin");
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(tui_rx.try_recv().is_ok(), "TUI session should receive");
+    assert!(
+        tg_rx.try_recv().is_err(),
+        "telegram session should NOT receive"
+    );
+}
+
+#[tokio::test]
+async fn test_notify_tui_no_user_state() {
+    let gateway = make_test_gateway();
+    // No user state at all — user never connected.
+    let schedule = make_tui_schedule("user-1", "sess-origin");
+    // Should not panic.
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+}
+
+#[tokio::test]
+async fn test_notify_tui_missing_channel_context_id() {
+    let gateway = make_test_gateway();
+    insert_test_session(&gateway, "user-1", "sess-1", "tui", None, true).await;
+
+    let mut schedule = make_tui_schedule("user-1", "sess-1");
+    schedule.channel_context_id = None;
+
+    let mut rx = {
+        let user = gateway.get_or_create_user("user-1").await;
+        let sessions = user.sessions.read().await;
+        sessions.get("sess-1").unwrap().events.subscribe()
+    };
+
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(
+        rx.try_recv().is_err(),
+        "no delivery when channel_context_id is missing"
+    );
+}
+
+#[tokio::test]
+async fn test_notify_tui_origin_wrong_channel_origin() {
+    let gateway = make_test_gateway();
+    // Origin session exists and is connected but has channel_origin == "telegram".
+    let mut origin_rx =
+        insert_test_session(&gateway, "user-1", "sess-origin", "telegram", None, true)
+            .await
+            .unwrap();
+    // Actual TUI fallback session.
+    let mut tui_rx = insert_test_session(&gateway, "user-1", "sess-tui", "tui", None, true)
+        .await
+        .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-origin");
+    gateway
+        .notify_user(&schedule, make_notification_frame())
+        .await;
+
+    assert!(
+        origin_rx.try_recv().is_err(),
+        "origin with wrong channel_origin should be skipped"
+    );
+    assert!(tui_rx.try_recv().is_ok(), "TUI fallback should receive");
+}
+
+#[tokio::test]
+async fn test_notify_tui_media_frame_fanout() {
+    let gateway = make_test_gateway();
+    // Origin evicted.
+    let mut fb1_rx = insert_test_session(&gateway, "user-1", "sess-fb1", "tui", None, true)
+        .await
+        .unwrap();
+    let mut fb2_rx = insert_test_session(&gateway, "user-1", "sess-fb2", "tui", None, true)
+        .await
+        .unwrap();
+
+    let schedule = make_tui_schedule("user-1", "sess-gone");
+    gateway.notify_user(&schedule, make_media_frame()).await;
+
+    assert!(
+        fb1_rx.try_recv().is_ok(),
+        "fallback 1 should receive media frame"
+    );
+    assert!(
+        fb2_rx.try_recv().is_ok(),
+        "fallback 2 should receive media frame"
+    );
 }

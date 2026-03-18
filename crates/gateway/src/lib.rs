@@ -1467,21 +1467,62 @@ impl SchedulerNotifier for GatewayServer {
         if let Some(ref channel_id) = schedule.channel_id {
             // Origin-only routing.
             if channel_id == GATEWAY_CHANNEL_ID {
-                // TUI: channel_context_id is the session_id.
                 if let Some(ref session_id) = schedule.channel_context_id {
                     let users = self.users.read().await;
                     if let Some(user) = users.get(&schedule.user_id) {
                         let sessions = user.sessions.read().await;
-                        if let Some(session) = sessions.get(session_id) {
-                            session.publish(frame);
-                        } else {
-                            tracing::debug!(
+
+                        // Try the origin session first. Also validate channel_origin
+                        // to guard against malformed routes where channel_context_id
+                        // points to a non-TUI session.
+                        let origin_delivered = sessions.get(session_id).is_some_and(|s| {
+                            s.channel_origin == GATEWAY_CHANNEL_ID && s.try_publish(frame.clone())
+                        });
+
+                        if origin_delivered {
+                            return;
+                        }
+
+                        // Fallback: fan-out to all connected top-level TUI sessions.
+                        let mut delivered_count = 0u32;
+                        for session in sessions.values() {
+                            if session.channel_origin == GATEWAY_CHANNEL_ID
+                                && session.parent_session_id.is_none()
+                                && session.events.receiver_count() > 0
+                            {
+                                session.publish(frame.clone());
+                                delivered_count += 1;
+                            }
+                        }
+
+                        if delivered_count == 0 {
+                            tracing::info!(
                                 schedule_id = %schedule.schedule_id,
-                                session_id = %session_id,
-                                "scheduler notification: TUI session not connected"
+                                user_id = %schedule.user_id,
+                                origin_session_id = %session_id,
+                                "scheduler notification: no connected TUI sessions, notification dropped"
+                            );
+                        } else {
+                            tracing::info!(
+                                schedule_id = %schedule.schedule_id,
+                                user_id = %schedule.user_id,
+                                origin_session_id = %session_id,
+                                delivered_session_count = delivered_count,
+                                "scheduler notification: origin session unavailable, fanning out to connected TUI sessions"
                             );
                         }
+                    } else {
+                        tracing::info!(
+                            schedule_id = %schedule.schedule_id,
+                            user_id = %schedule.user_id,
+                            "scheduler notification: no in-memory user state, notification dropped"
+                        );
                     }
+                } else {
+                    tracing::warn!(
+                        schedule_id = %schedule.schedule_id,
+                        "scheduler notification: malformed TUI schedule, missing channel_context_id"
+                    );
                 }
             } else {
                 // Non-TUI channel: delegate to registered ProactiveSender.

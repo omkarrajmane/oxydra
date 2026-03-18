@@ -162,6 +162,12 @@ impl SessionState {
         );
     }
 
+    /// Attempt to publish a frame. Returns `true` if at least one subscriber
+    /// received the frame, `false` if there are no active receivers.
+    pub(crate) fn try_publish(&self, frame: GatewayServerFrame) -> bool {
+        self.events.send(frame).is_ok()
+    }
+
     pub(crate) fn publish(&self, frame: GatewayServerFrame) {
         let _ = self.events.send(frame);
     }
