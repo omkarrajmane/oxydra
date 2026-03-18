@@ -1713,11 +1713,11 @@ impl TelegramProactiveSender {
                         ProactiveDeliveryOutcome::PrimarySuccess => {
                             Some(RouteDeliveryOutcome::PrimaryRouteSucceeded)
                         }
-                        ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess => {
-                            Some(RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackSucceeded {
+                        ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess => Some(
+                            RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackSucceeded {
                                 fallback_channel_context_id: chat_id.to_string(),
-                            })
-                        }
+                            },
+                        ),
                         ProactiveDeliveryOutcome::ThreadNotFoundFallbackFailed => {
                             Some(RouteDeliveryOutcome::PrimaryRouteNotFoundFallbackFailed)
                         }
@@ -2340,8 +2340,7 @@ mod tests {
         let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_text_frame("Hello world");
         sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2358,8 +2357,7 @@ mod tests {
         let (url, _log) = spawn_mock_tg(vec![tg_thread_not_found(), tg_ok()]).await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_text_frame("Hello world");
         sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2387,8 +2385,7 @@ mod tests {
         .await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_text_frame("Hello world");
         sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2414,8 +2411,7 @@ mod tests {
         .await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_text_frame("Hello world");
         let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2434,8 +2430,7 @@ mod tests {
         let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_scheduled_media_frame();
         let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2449,8 +2444,7 @@ mod tests {
         let (url, _log) = spawn_mock_tg(vec![]).await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_interactive_media_frame();
         let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2477,8 +2471,7 @@ mod tests {
         let (url, _log) = spawn_mock_tg(vec![tg_ok()]).await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::failing());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         let frame = make_text_frame("Hello world");
         let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
@@ -2501,8 +2494,7 @@ mod tests {
         .await;
         let bot = Bot::new_url(&url);
         let updater = Arc::new(MockStreakUpdater::new());
-        let sender =
-            TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
+        let sender = TelegramProactiveSender::new_with_bot_and_updater(bot, 4096, updater.clone());
 
         // Media frames
         let media1 = make_scheduled_media_frame();
@@ -2514,7 +2506,11 @@ mod tests {
         sender.send_proactive_impl("-100123:42", &text).await;
 
         let calls = updater.calls();
-        assert_eq!(calls.len(), 1, "streak updater should be called once (text only)");
+        assert_eq!(
+            calls.len(),
+            1,
+            "streak updater should be called once (text only)"
+        );
         assert_eq!(calls[0].0, "sched-1");
     }
 }

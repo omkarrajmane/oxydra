@@ -389,8 +389,8 @@ pub trait SchedulerNotifier: Send + Sync {
 
 The `GatewayServer` implementation routes notifications to the originating channel:
 
-1. **TUI sessions** (`channel_id == "gateway"`) — publishes to the specific WebSocket session matching the `channel_context_id`
-2. **External channels** (e.g. Telegram) — looks up a registered `ProactiveSender` for the channel and invokes `send_notification()`
+1. **TUI sessions** (`channel_id == "tui"`) — attempts delivery to the origin session matching the `channel_context_id`. If the origin session is missing or has no connected subscribers, fans out to all connected top-level TUI sessions (`channel_origin == "tui"`, `parent_session_id.is_none()`, `receiver_count() > 0`). If no connected TUI sessions exist, the notification is dropped and logged at `info`.
+2. **External channels** (e.g. Telegram) — looks up a registered `ProactiveSender` for the channel and invokes `send_proactive()`. The proactive sender handles both `ScheduledNotification` (text) and `MediaAttachment` frames (when `schedule_id` is set). For Telegram, deleted forum topics trigger fallback delivery to the main chat, and after 3 consecutive thread-not-found failures the stored route is automatically remapped.
 3. **Legacy fallback** — broadcasts to all sessions for the user when no specific origin is available
 
 ### Failure Notifications

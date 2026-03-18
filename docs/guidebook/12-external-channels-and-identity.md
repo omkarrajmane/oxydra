@@ -1,9 +1,9 @@
 # Chapter 12: External Channels and Identity
 
 > **Status:** Implemented
-> **Implemented:** Telegram adapter (long-polling, edit-message streaming, command interception), sender auth/audit, durable channel session mapping, forum-topic threading, multi-modal input/output, `send_media` tool, proactive notifications
+> **Implemented:** Telegram adapter (long-polling, edit-message streaming, command interception), sender auth/audit, durable channel session mapping, forum-topic threading, multi-modal input/output, `send_media` tool, proactive notifications (text + scheduled media), deleted-topic fallback, delivery streak tracking with route remapping
 > **Remaining:** Discord, Slack, WhatsApp adapters (deferred)
-> **Last verified against code:** 2026-02-28
+> **Last verified against code:** 2026-03-18
 
 ## Overview
 
@@ -288,6 +288,12 @@ Dynamic onboarding can be added later as an enhancement on top of the static bin
 | Telegram command interception (`/new`, `/sessions`, `/switch`, `/cancel`, `/cancelall`, `/status`) | ✅ Implemented | `channels/src/telegram.rs` |
 | Adapter spawning in oxydra-vm | ✅ Implemented | `runner/src/bin/oxydra-vm.rs` |
 | Feature-flagged `telegram` in channels + runner | ✅ Implemented | `channels/Cargo.toml`, `runner/Cargo.toml` |
+| `ProactiveSender` trait (`send_proactive`) | ✅ Implemented | `types/src/proactive.rs` |
+| `TelegramProactiveSender` (text + scheduled media) | ✅ Implemented | `channels/src/telegram.rs` |
+| Deleted forum topic fallback (text + media) | ✅ Implemented | `channels/src/telegram.rs` |
+| `DeliveryStreakUpdater` trait + `RouteDeliveryOutcome` | ✅ Implemented | `types/src/proactive.rs` |
+| Delivery streak DB column + store impl | ✅ Implemented | `memory/migrations/0025_*.sql`, `memory/src/scheduler_store.rs` |
+| Route remapping after 3 consecutive failures | ✅ Implemented | `memory/src/scheduler_store.rs`, `channels/src/telegram.rs` |
 | Discord/Slack/WhatsApp adapters | Deferred | — |
 
 ## Telegram Adapter
@@ -425,15 +431,36 @@ Capabilities are resolved per-turn from the `TurnOrigin.channel_id` via `Channel
 External channels that support sending unsolicited messages implement the `ProactiveSender` trait (defined in `types/src/proactive.rs`):
 
 ```rust
-#[async_trait]
 pub trait ProactiveSender: Send + Sync {
-    async fn send_notification(&self, channel_context_id: &str, frame: GatewayServerFrame);
+    fn send_proactive(&self, channel_context_id: &str, frame: &GatewayServerFrame);
 }
 ```
 
-At startup, each channel adapter registers its proactive sender with `GatewayServer::register_proactive_sender()`. For example, Telegram registers a `TelegramProactiveSender` that converts the `channel_context_id` (format: `{chat_id}` or `{chat_id}:{thread_id}`) back into a Telegram chat target and sends the notification message via the Bot API.
+The method is synchronous at the trait boundary — implementations spawn their own async task internally. At startup, each channel adapter registers its proactive sender with `GatewayServer::register_proactive_sender()`. For example, Telegram registers a `TelegramProactiveSender` that converts the `channel_context_id` (format: `{chat_id}` or `{chat_id}:{thread_id}`) back into a Telegram chat target and delivers via the Bot API.
 
-When a scheduled task fires and its notification policy requires delivery, the `GatewayServer::notify_user()` implementation looks up the schedule's `channel_id`, finds the matching `ProactiveSender`, and calls `send_notification()` with the `channel_context_id` and notification frame.
+When a scheduled task fires and its notification policy requires delivery, the `GatewayServer::notify_user()` implementation looks up the schedule's `channel_id`, finds the matching `ProactiveSender`, and calls `send_proactive()` with the `channel_context_id` and notification frame.
+
+The proactive sender handles two frame types:
+
+- **`ScheduledNotification`** — text delivery with HTML-to-plain-text fallback on formatting errors
+- **Scheduled `MediaAttachment`** (identified by `schedule_id.is_some()` on `GatewayMediaAttachment`) — media upload via the appropriate Telegram API method (`send_photo`, `send_document`, `send_audio`, `send_voice`, `send_video`)
+
+#### Deleted Forum Topic Recovery
+
+When a stored route targets a deleted Telegram forum topic, delivery fails with `message thread not found`. The proactive sender handles this by:
+
+1. Retrying the delivery to the main chat (`message_thread_id = None`) for both text and media
+2. For media that still fails after retry, sending a plain text fallback notice so the user knows an attachment was lost
+
+#### Delivery Streak Tracking and Route Remapping
+
+To prevent repeated failures against a permanently deleted topic, the proactive sender tracks consecutive thread-not-found failures via the `DeliveryStreakUpdater` trait (also in `types/src/proactive.rs`):
+
+- **Successful primary delivery** — resets the streak to 0
+- **Thread-not-found with successful fallback** — increments the streak atomically
+- **Streak reaches 3** — the schedule's `channel_context_id` is remapped to the main chat ID and the streak resets
+
+The streak is persisted in the `schedules` table (`delivery_thread_not_found_streak` column, migration 0025), so the threshold survives process restarts. The `memory` crate implements the trait with atomic SQL (`UPDATE ... SET streak = streak + 1 RETURNING streak`) to handle concurrent updates safely. A single multi-chunk text batch or media batch counts as one delivery attempt for streak purposes.
 
 ### System Prompt Augmentation
 

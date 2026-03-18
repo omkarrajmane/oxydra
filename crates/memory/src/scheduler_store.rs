@@ -586,14 +586,8 @@ impl DeliveryStreakUpdater for LibsqlSchedulerStore {
                     .await
                     .map_err(|e| store_error(e.to_string()))?;
 
-                let new_streak = match rows
-                    .next()
-                    .await
-                    .map_err(|e| store_error(e.to_string()))?
-                {
-                    Some(row) => {
-                        row.get::<i64>(0).map_err(|e| store_error(e.to_string()))? as u32
-                    }
+                let new_streak = match rows.next().await.map_err(|e| store_error(e.to_string()))? {
+                    Some(row) => row.get::<i64>(0).map_err(|e| store_error(e.to_string()))? as u32,
                     None => {
                         // Guard didn't match — route was already changed.
                         tracing::debug!(

@@ -26,7 +26,7 @@ This chapter tracks the implementation status of all 21 phases, documents identi
 | 16 | Observability (OpenTelemetry) | On Hold | Deferred pending product need |
 | 17 | MCP support | Planned | |
 | 18 | Session lifecycle controls | **Complete** | |
-| 19 | Scheduler system | **Complete** | Durable store, polling executor, 4 LLM tools, conditional notification, cron/interval/once cadences |
+| 19 | Scheduler system | **Complete** | Durable store, polling executor, 4 LLM tools, conditional notification, cron/interval/once cadences, proactive media delivery, delivery streak tracking with route remap |
 | 20 | Skill system | **Complete** | Prompt-injected markdown skills; embedded built-ins (rust-embed); browser automation skill; workspace/user/system/embedded precedence; tool-readiness activation gating |
 | 21 | Persona governance | Planned | |
 | — | Web configurator | **Complete** | `runner web` subcommand, REST API, embedded SPA, onboarding wizard, config editing with backup/validation, lifecycle control, log viewing, host validation, token auth |
@@ -253,7 +253,9 @@ Built a complete durable scheduler that lets the LLM create and manage one-off a
 - **Cadence evaluation** (`memory/src/cadence.rs`): `next_run_for_cadence()`, `validate_cadence()`, `parse_cadence()`, `format_in_timezone()` using `cron` and `chrono-tz` crates
 - **Scheduler tools** (`tools/src/scheduler_tools.rs`): `schedule_create` (SideEffecting), `schedule_search` (ReadOnly), `schedule_edit` (SideEffecting), `schedule_delete` (SideEffecting) — registered via `register_scheduler_tools()` during bootstrap when scheduler is enabled
 - **SchedulerExecutor** (`runtime/src/scheduler_executor.rs`): Background polling loop with `ScheduledTurnRunner` and `SchedulerNotifier` traits; handles notification routing (Always/Conditional/Never), one-shot completion, failure tracking, auto-disable, history pruning
-- **Gateway integration** (`gateway/src/lib.rs`): `SchedulerNotifier` implementation on `GatewayServer`; `ScheduledTurnRunner` implementation on `RuntimeGatewayTurnRunner`; `GatewayServerFrame::ScheduledNotification` variant
+- **Gateway integration** (`gateway/src/lib.rs`): `SchedulerNotifier` implementation on `GatewayServer` with TUI fallback fan-out (origin session → all connected top-level TUI sessions), `ProactiveSender`-based external channel routing; `ScheduledTurnRunner` implementation on `RuntimeGatewayTurnRunner`; `GatewayServerFrame::ScheduledNotification` variant
+- **Proactive media delivery**: `GatewayMediaAttachment` extended with optional `schedule_id`; `TelegramProactiveSender` handles scheduled `MediaAttachment` frames with deleted-topic fallback to main chat
+- **Delivery streak tracking** (`types/src/proactive.rs`, `memory/migrations/0025_*.sql`, `memory/src/scheduler_store.rs`): `DeliveryStreakUpdater` trait and `RouteDeliveryOutcome` enum; `delivery_thread_not_found_streak` column on `schedules` table; atomic increment-and-remap after 3 consecutive thread-not-found failures
 - **Runner bootstrap** (`runner/src/bootstrap.rs`): `scheduler_store` field on `VmBootstrapRuntime`; conditional scheduler tool registration; system prompt augmentation with scheduler instructions
 - **oxydra-vm wiring** (`runner/src/bin/oxydra-vm.rs`): Executor spawned as `tokio::spawn` background task; `CancellationToken` cancelled on shutdown
 - **TUI support** (`tui/src/channel_adapter.rs`, `tui/src/ui_model.rs`): `ScheduledNotification` handling in match arms; `last_scheduled_notification` field; display as system messages in chat history
@@ -348,9 +350,12 @@ Built a complete durable scheduler that lets the LLM create and manage one-off a
 - Execution through same policy envelope as interactive turns
 - Automatic schedule lifecycle management: one-shot completion, failure tracking, auto-disable
 - System prompt augmentation with scheduler tool instructions
-- TUI support for displaying scheduled notifications
+- TUI support for displaying scheduled notifications with fallback fan-out to connected top-level sessions
+- Proactive scheduled media delivery for Telegram (`GatewayMediaAttachment.schedule_id`)
+- Deleted forum topic recovery: fallback to main chat for both text and media
+- Delivery streak tracking (`DeliveryStreakUpdater` trait, `delivery_thread_not_found_streak` column) with automatic route remapping after 3 consecutive thread-not-found failures
 
-**Verification gate:** ✅ One-off and periodic entries execute bounded turns with normal policy/audit controls; conditional notification works correctly; all tests pass.
+**Verification gate:** ✅ One-off and periodic entries execute bounded turns with normal policy/audit controls; conditional notification works correctly; TUI fallback fan-out delivers to all connected sessions when origin is unavailable; proactive media and route self-healing tested; all tests pass.
 
 ### Phase 20: Skill System — ✅ Complete
 

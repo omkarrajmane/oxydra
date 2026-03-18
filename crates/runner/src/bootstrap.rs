@@ -578,30 +578,36 @@ pub async fn bootstrap_vm_runtime_with_paths(
     type StreakUpdaterOpt = Option<Arc<dyn types::DeliveryStreakUpdater>>;
     let (scheduler_store, delivery_streak_updater): (SchedulerStoreOpt, StreakUpdaterOpt) =
         if config.scheduler.enabled {
-        if let Some(ref backend) = memory_backend {
-            match backend.connect_for_scheduler().await {
-                Ok(conn) => {
-                    let concrete_store = Arc::new(memory::LibsqlSchedulerStore::new(conn));
-                    let scheduler_store: Arc<dyn memory::SchedulerStore> = concrete_store.clone();
-                    let delivery_updater: Arc<dyn types::DeliveryStreakUpdater> = concrete_store;
-                    register_scheduler_tools(&mut registry, scheduler_store.clone(), &config.scheduler);
-                    tracing::info!("scheduler tools registered");
-                    (Some(scheduler_store), Some(delivery_updater))
+            if let Some(ref backend) = memory_backend {
+                match backend.connect_for_scheduler().await {
+                    Ok(conn) => {
+                        let concrete_store = Arc::new(memory::LibsqlSchedulerStore::new(conn));
+                        let scheduler_store: Arc<dyn memory::SchedulerStore> =
+                            concrete_store.clone();
+                        let delivery_updater: Arc<dyn types::DeliveryStreakUpdater> =
+                            concrete_store;
+                        register_scheduler_tools(
+                            &mut registry,
+                            scheduler_store.clone(),
+                            &config.scheduler,
+                        );
+                        tracing::info!("scheduler tools registered");
+                        (Some(scheduler_store), Some(delivery_updater))
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to create scheduler store; scheduler disabled");
+                        (None, None)
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to create scheduler store; scheduler disabled");
-                    (None, None)
-                }
+            } else {
+                tracing::warn!(
+                    "scheduler enabled but memory backend is not available; scheduler disabled"
+                );
+                (None, None)
             }
         } else {
-            tracing::warn!(
-                "scheduler enabled but memory backend is not available; scheduler disabled"
-            );
             (None, None)
-        }
-    } else {
-        (None, None)
-    };
+        };
 
     // Validate agent definitions (if any) against available providers/tools and local prompt files.
     if !config.agents.is_empty() {

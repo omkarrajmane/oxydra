@@ -187,8 +187,8 @@ impl SchedulerNotifier for GatewayServer {
 
 Notification routing is origin-aware:
 
-1. **TUI sessions** (`channel_id == "gateway"`) — delivers to the specific WebSocket session matching the `channel_context_id` stored on the schedule
-2. **External channels** (e.g. Telegram) — looks up a registered `ProactiveSender` for the channel and invokes `send_notification(channel_context_id, frame)`
+1. **TUI sessions** (`channel_id == "tui"`) — attempts delivery to the origin session matching the `channel_context_id` stored on the schedule. The origin is considered valid only if the session exists and has active subscribers (`receiver_count() > 0`). If the origin session is missing or disconnected, the gateway fans out to **all connected top-level TUI sessions** for the user (`channel_origin == "tui"`, `parent_session_id.is_none()`, `receiver_count() > 0`). If no connected TUI sessions exist, the notification is dropped and logged at `info`. A malformed TUI schedule with missing `channel_context_id` is logged at `warn`.
+2. **External channels** (e.g. Telegram) — looks up a registered `ProactiveSender` for the channel and invokes `send_proactive(channel_context_id, &frame)`. The proactive sender handles both `ScheduledNotification` text frames and scheduled `MediaAttachment` frames (identified by `schedule_id.is_some()`).
 3. **Legacy fallback** — broadcasts to all sessions for the user when no specific origin is available
 
 ### ProactiveSender Trait
@@ -198,13 +198,41 @@ Notification routing is origin-aware:
 External channels that support unsolicited outbound messages implement the `ProactiveSender` trait:
 
 ```rust
-#[async_trait]
 pub trait ProactiveSender: Send + Sync {
-    async fn send_notification(&self, channel_context_id: &str, frame: GatewayServerFrame);
+    fn send_proactive(&self, channel_context_id: &str, frame: &GatewayServerFrame);
 }
 ```
 
-Channels register their sender with `GatewayServer::register_proactive_sender(channel_id, sender)` at startup. The Telegram channel, for example, registers a `TelegramProactiveSender` that parses the `channel_context_id` into a chat ID and sends the notification as a Telegram message.
+The method is synchronous at the trait boundary — implementations spawn their own async task internally. Channels register their sender with `GatewayServer::register_proactive_sender(channel_id, sender)` at startup. For example, Telegram registers a `TelegramProactiveSender` that parses the `channel_context_id` into a chat ID (and optional thread ID for forum topics) and delivers the notification via the Bot API. The proactive sender handles:
+
+- **`ScheduledNotification`** — text delivery with HTML-to-plain-text fallback
+- **Scheduled `MediaAttachment`** (when `schedule_id.is_some()`) — media upload via the appropriate Telegram API method (`send_photo`, `send_document`, etc.)
+- **Deleted forum topic recovery** — if the stored thread returns `message thread not found`, delivery is retried to the main chat (`message_thread_id = None`). For media that still cannot be uploaded after retry, a plain text fallback notice is sent.
+
+### DeliveryStreakUpdater Trait
+
+**File:** `types/src/proactive.rs`
+
+The `DeliveryStreakUpdater` trait supports durable route self-healing for external channels:
+
+```rust
+pub trait DeliveryStreakUpdater: Send + Sync {
+    async fn report_outcome(
+        &self,
+        schedule_id: &str,
+        attempted_channel_context_id: &str,
+        outcome: &RouteDeliveryOutcome,
+    ) -> Result<(), SchedulerError>;
+}
+```
+
+After each proactive text delivery, the `TelegramProactiveSender` reports a `RouteDeliveryOutcome`:
+
+- **`PrimaryRouteSucceeded`** — resets the thread-not-found streak to 0
+- **`PrimaryRouteNotFoundFallbackSucceeded`** — increments the streak atomically; if it reaches 3, the schedule's `channel_context_id` is remapped to the fallback route (main chat) and the streak resets
+- **`PrimaryRouteNotFoundFallbackFailed`** — increments the streak without remapping
+
+The streak is persisted in the `schedules` table (`delivery_thread_not_found_streak` column), so the 3-failure threshold survives process restarts. The `memory` crate implements the trait with atomic increment-and-read SQL (`UPDATE ... SET streak = streak + 1 ... RETURNING streak`) to handle concurrent updates safely.
 
 ### Per-Turn Origin Propagation
 
@@ -420,7 +448,7 @@ TurnCompleted { final_message, usage } → WebSocket → TUI
 - **Per-user concurrent turn limit:** Configurable via `max_concurrent_turns_per_user` (default: 10). When the limit is reached, new top-level turns queue fairly (bounded FIFO via Tokio `Semaphore`). When the queue itself is full (`max_sessions_per_user`, default 50), new turns are rejected with an error frame. Subagent turns execute under their parent turn's permit and do not consume queue slots.
 - **External channels:** The Telegram adapter is implemented (see Chapter 12) including sender auth, channel session mapping, edit-message streaming, and command interception. It runs in-process alongside the gateway, calling the internal API directly. Future channels (Discord, Slack, WhatsApp) follow the same pattern but are not yet implemented.
 - **No multi-agent routing:** The gateway currently routes to a single runtime instance per user; multi-agent delegation with subagent spawning is in progress (Phase 15)
-- **Scheduled notifications are origin-routed:** Notifications are delivered to the channel that created the schedule. If the user was in a TUI session and that session is no longer connected, the notification is lost (results persist in memory and can be retrieved via `schedule_runs`/`schedule_run_output` tools). External channels with registered `ProactiveSender`s (e.g. Telegram) can deliver notifications even when the user is offline.
+- **Scheduled notifications are origin-routed with fallback:** Notifications are delivered to the channel that created the schedule. TUI schedules fall back to fan-out across all connected top-level TUI sessions when the origin session is unavailable; if no TUI sessions are connected, the notification is dropped (results persist in memory and can be retrieved via `schedule_runs`/`schedule_run_output` tools). External channels with registered `ProactiveSender`s (e.g. Telegram) can deliver both text notifications and scheduled media even when the user is offline. Telegram schedules targeting deleted forum topics automatically fall back to the main chat, and after 3 consecutive thread-not-found failures the stored route is permanently remapped.
 
 ## Inline Attachment Ingress Limits
 
