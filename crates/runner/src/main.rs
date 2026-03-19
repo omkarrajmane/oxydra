@@ -7,8 +7,8 @@ use std::{
 use clap::{Parser, Subcommand};
 use runner::{
     GATEWAY_ENDPOINT_MARKER_FILE, Runner, RunnerControlTransportError, RunnerError,
-    RunnerStartRequest, RunnerTuiConnectRequest, catalog::CatalogError, send_control_to_daemon,
-    web,
+    RunnerStartRequest, RunnerTuiConnectRequest, VM_STDERR_LOG, catalog::CatalogError,
+    send_control_to_daemon, web,
 };
 use thiserror::Error;
 use types::{
@@ -300,6 +300,13 @@ fn run() -> Result<(), CliError> {
             // Non-fatal: log the warning but continue — some tiers may not
             // expose a gateway endpoint immediately or at all.
             tracing::warn!(error = %error, "could not read gateway endpoint marker");
+            eprintln!(
+                "warning: {error}\n  \
+                 The guest process may have failed to start. Check logs at:\n  \
+                 {}/{VM_STDERR_LOG}\n  \
+                 Or run: runner logs --stream stderr",
+                startup.workspace.logs.display()
+            );
         }
     }
 
@@ -478,6 +485,13 @@ fn server_start(runner: &Runner, user_id: &str, args: &CliArgs) -> Result<(), Cl
         }
         Err(error) => {
             tracing::warn!(error = %error, "could not read gateway endpoint marker");
+            eprintln!(
+                "warning: {error}\n  \
+                 The guest process may have failed to start. Check logs at:\n  \
+                 {}/{VM_STDERR_LOG}\n  \
+                 Or run: runner logs --stream stderr",
+                startup.workspace.logs.display()
+            );
         }
     }
 

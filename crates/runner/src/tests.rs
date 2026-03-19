@@ -780,7 +780,8 @@ fn tui_connect_only_fails_with_clear_error_when_guest_is_absent() {
         error,
         RunnerError::NoRunningGuest {
             ref user_id,
-            ref endpoint_path
+            ref endpoint_path,
+            ..
         } if user_id == "alice" && endpoint_path.ends_with(GATEWAY_ENDPOINT_MARKER_FILE)
     ));
     assert!(backend.recorded_launches().is_empty());
@@ -813,6 +814,104 @@ fn tui_connect_only_never_spawns_guest_when_probe_fails() {
     assert!(backend.recorded_launches().is_empty());
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn last_guest_stderr_line_returns_none_for_missing_file() {
+    let dir = temp_dir("stderr-missing");
+    fs::create_dir_all(&dir).unwrap();
+    assert!(last_guest_stderr_line(&dir).is_none());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn last_guest_stderr_line_returns_none_for_empty_file() {
+    let dir = temp_dir("stderr-empty");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(VM_STDERR_LOG), "").unwrap();
+    assert!(last_guest_stderr_line(&dir).is_none());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn last_guest_stderr_line_skips_blank_lines() {
+    let dir = temp_dir("stderr-blanks");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(VM_STDERR_LOG), "   \n\n  \n").unwrap();
+    assert!(last_guest_stderr_line(&dir).is_none());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn last_guest_stderr_line_returns_last_real_line() {
+    let dir = temp_dir("stderr-content");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join(VM_STDERR_LOG),
+        "first error\nmissing API key for provider 'openai'\n\n",
+    )
+    .unwrap();
+    assert_eq!(
+        last_guest_stderr_line(&dir).as_deref(),
+        Some("missing API key for provider 'openai'")
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn guest_diagnostic_always_includes_log_path() {
+    let dir = temp_dir("diag-no-file");
+    fs::create_dir_all(&dir).unwrap();
+    let diag = guest_diagnostic(&dir);
+    assert!(diag.hint.is_none());
+    assert!(diag.log_path.is_some(), "log_path should always be set");
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn guest_diagnostic_captures_hint_and_log_path() {
+    let dir = temp_dir("diag-with-file");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(VM_STDERR_LOG), "some error\n").unwrap();
+    let diag = guest_diagnostic(&dir);
+    assert_eq!(diag.hint.as_deref(), Some("some error"));
+    assert!(diag.log_path.is_some());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn enrich_guest_error_upgrades_no_running_guest() {
+    let dir = temp_dir("enrich-upgrade");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(VM_STDERR_LOG), "provider init failed\n").unwrap();
+
+    let original = RunnerError::NoRunningGuest {
+        user_id: "bob".to_owned(),
+        endpoint_path: PathBuf::from("/tmp/gateway-endpoint"),
+        diagnostic: GuestDiagnostic::default(),
+    };
+    let enriched = enrich_guest_error(original, &dir);
+    match &enriched {
+        RunnerError::NoRunningGuest { diagnostic, .. } => {
+            assert_eq!(diagnostic.hint.as_deref(), Some("provider init failed"));
+            assert!(diagnostic.log_path.is_some());
+        }
+        other => panic!("expected NoRunningGuest, got: {other:?}"),
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn enrich_guest_error_passes_through_other_variants() {
+    let dir = temp_dir("enrich-passthrough");
+    fs::create_dir_all(&dir).unwrap();
+
+    let original = RunnerError::InvalidGatewayEndpoint {
+        path: PathBuf::from("/tmp/marker"),
+    };
+    let result = enrich_guest_error(original, &dir);
+    assert!(matches!(result, RunnerError::InvalidGatewayEndpoint { .. }));
+    let _ = fs::remove_dir_all(dir);
 }
 
 #[test]

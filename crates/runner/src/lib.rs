@@ -2,7 +2,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
+    fmt, fs,
     future::Future,
     io::{self, Write},
     path::{Path, PathBuf},
@@ -73,6 +73,7 @@ const IPC_DIR_NAME: &str = "ipc";
 const INTERNAL_DIR_NAME: &str = ".oxydra";
 pub const GATEWAY_ENDPOINT_MARKER_FILE: &str = "gateway-endpoint";
 pub const RUNNER_CONTROL_SOCKET_NAME: &str = "runner-control.sock";
+pub const VM_STDERR_LOG: &str = "oxydra-vm.stderr.log";
 
 const FIRECRACKER_BINARY: &str = "firecracker";
 const PROCESS_EXECUTABLE_ENV_KEY: &str = "OXYDRA_VM_PROCESS_EXECUTABLE";
@@ -367,13 +368,16 @@ impl Runner {
         let _user_config = self.load_user_config(&user_id)?;
         let workspace = self.provision_user_workspace(&user_id)?;
         let endpoint_path = workspace.ipc.join(GATEWAY_ENDPOINT_MARKER_FILE);
-        let gateway_endpoint = read_gateway_endpoint_marker(&endpoint_path, &user_id)?;
+        let log_dir = &workspace.logs;
+        let gateway_endpoint = read_gateway_endpoint_marker(&endpoint_path, &user_id)
+            .map_err(|error| enrich_guest_error(error, log_dir))?;
         let session_id = probe_gateway_health(&gateway_endpoint, &user_id).map_err(|error| {
             if let RunnerError::GatewayProbeFailed { endpoint, message } = error {
                 RunnerError::StaleGatewayEndpoint {
                     endpoint,
                     marker_path: endpoint_path.clone(),
                     message,
+                    diagnostic: guest_diagnostic(log_dir),
                 }
             } else {
                 error
@@ -1445,6 +1449,30 @@ pub struct CrateSandboxBackend;
 
 pub type CommandSandboxBackend = CrateSandboxBackend;
 
+/// Optional diagnostic context appended to guest-related error messages.
+///
+/// When the guest process fails to start, this captures the last line from its
+/// stderr log (if available) and the path to the full log file so the user can
+/// investigate the root cause.
+#[derive(Debug, Default)]
+pub struct GuestDiagnostic {
+    pub hint: Option<String>,
+    pub log_path: Option<PathBuf>,
+}
+
+impl fmt::Display for GuestDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(ref hint) = self.hint {
+            write!(f, "\nThe guest process failed to start:\n  {hint}")?;
+        }
+        if let Some(ref log_path) = self.log_path {
+            write!(f, "\nFull logs: {}", log_path.display())?;
+        }
+        write!(f, "\nOr run: runner logs --stream stderr")?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum RunnerError {
     #[error("failed to read runner config `{path}`: {source}")]
@@ -1567,11 +1595,12 @@ pub enum RunnerError {
         source: io::Error,
     },
     #[error(
-        "no running guest found for user `{user_id}`; expected gateway endpoint marker at `{endpoint_path}`"
+        "no running guest found for user `{user_id}`; expected gateway endpoint marker at `{endpoint_path}`{diagnostic}"
     )]
     NoRunningGuest {
         user_id: String,
         endpoint_path: PathBuf,
+        diagnostic: GuestDiagnostic,
     },
     #[error("failed to read gateway endpoint marker `{path}`: {source}")]
     ReadGatewayEndpoint {
@@ -1587,12 +1616,13 @@ pub enum RunnerError {
         "found gateway endpoint marker at `{marker_path}` but the gateway is not responding \
          (`{endpoint}`): {message}\n\
          The previous session may have exited without cleanup. \
-         Remove `{marker_path}` and restart."
+         Remove `{marker_path}` and restart.{diagnostic}"
     )]
     StaleGatewayEndpoint {
         endpoint: String,
         marker_path: PathBuf,
         message: String,
+        diagnostic: GuestDiagnostic,
     },
     #[error("failed to transfer image `{image}` into sandbox VM: {message}")]
     ImageTransfer { image: String, message: String },
@@ -3183,6 +3213,7 @@ fn read_gateway_endpoint_marker(path: &Path, user_id: &str) -> Result<String, Ru
             RunnerError::NoRunningGuest {
                 user_id: user_id.to_owned(),
                 endpoint_path: path.to_path_buf(),
+                diagnostic: GuestDiagnostic::default(),
             }
         } else {
             RunnerError::ReadGatewayEndpoint {
@@ -3198,6 +3229,45 @@ fn read_gateway_endpoint_marker(path: &Path, user_id: &str) -> Result<String, Ru
         });
     }
     Ok(endpoint.to_owned())
+}
+
+/// Read the last non-empty line from the `oxydra-vm.stderr.log` file in the
+/// given log directory. Returns `None` if the file does not exist, is empty,
+/// or cannot be read.
+fn last_guest_stderr_line(log_dir: &Path) -> Option<String> {
+    let path = log_dir.join(VM_STDERR_LOG);
+    let content = fs::read_to_string(path).ok()?;
+    content
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_owned())
+}
+
+/// Build a [`GuestDiagnostic`] by inspecting the guest stderr log.
+fn guest_diagnostic(log_dir: &Path) -> GuestDiagnostic {
+    let stderr_path = log_dir.join(VM_STDERR_LOG);
+    let hint = last_guest_stderr_line(log_dir);
+    GuestDiagnostic {
+        hint,
+        log_path: Some(stderr_path),
+    }
+}
+
+/// Enrich a [`RunnerError`] with guest diagnostic info when possible.
+fn enrich_guest_error(error: RunnerError, log_dir: &Path) -> RunnerError {
+    match error {
+        RunnerError::NoRunningGuest {
+            user_id,
+            endpoint_path,
+            ..
+        } => RunnerError::NoRunningGuest {
+            user_id,
+            endpoint_path,
+            diagnostic: guest_diagnostic(log_dir),
+        },
+        other => other,
+    }
 }
 
 fn probe_gateway_health(gateway_endpoint: &str, user_id: &str) -> Result<String, RunnerError> {
