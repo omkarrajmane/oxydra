@@ -28,3 +28,4 @@ coverage/
 
 # Generated WASM guest artifact (rebuilt by crates/tools/build.rs)
 crates/tools/guest/*.wasm
+.opencode/

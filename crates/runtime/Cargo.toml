@@ -16,11 +16,13 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tools = { path = "../tools" }
 tracing = "0.1"
 tiktoken-rs = "0.9"
+thiserror = "1"
 types = { path = "../types" }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 mockall = "0.14"
+proptest = "1.6"
 provider = { path = "../provider" }
 oxydra-shelld = { path = "../oxydra-shelld" }
 tokio = { version = "1", features = ["full"] }

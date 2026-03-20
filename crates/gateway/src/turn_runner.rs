@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use super::*;
 use runtime::ScheduledTurnRunner;
+use runtime::policy_guard::{PolicyValidationError, resolve_policy};
 use types::{
-    AgentDefinition, ChannelCapabilities, InlineMedia, MediaAttachment, ProviderSelection,
+    AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, InlineMedia, MediaAttachment,
+    ProviderError, ProviderId, ProviderSelection, RunPolicyInput,
 };
 
 /// User-submitted content for a single turn (text + optional media).
@@ -27,6 +29,7 @@ pub struct TurnOrigin {
 
 #[async_trait]
 pub trait GatewayTurnRunner: Send + Sync {
+    #[allow(clippy::too_many_arguments)]
     async fn run_turn(
         &self,
         user_id: &str,
@@ -35,18 +38,26 @@ pub trait GatewayTurnRunner: Send + Sync {
         cancellation: CancellationToken,
         delta_sender: mpsc::UnboundedSender<StreamItem>,
         origin: TurnOrigin,
+        policy: Option<RunPolicyInput>,
     ) -> Result<Response, RuntimeError>;
 
     async fn drop_session_context(&self, session_id: &str);
+
+    /// Resolve the effective runtime policy for a session admission.
+    fn resolve_session_policy(
+        &self,
+        agent_name: &str,
+        per_run: &RunPolicyInput,
+    ) -> Result<EffectiveRunPolicy, PolicyValidationError>;
 }
 
 pub struct RuntimeGatewayTurnRunner {
     runtime: Arc<AgentRuntime>,
     default_selection: ProviderSelection,
     agent_selections: BTreeMap<String, ProviderSelection>,
+    agent_definitions: BTreeMap<String, AgentDefinition>,
     contexts: Mutex<HashMap<String, Context>>,
 }
-
 impl RuntimeGatewayTurnRunner {
     pub fn new(
         runtime: Arc<AgentRuntime>,
@@ -54,18 +65,21 @@ impl RuntimeGatewayTurnRunner {
         agents: BTreeMap<String, AgentDefinition>,
     ) -> Self {
         let mut agent_selections = BTreeMap::new();
+        let mut agent_definitions = BTreeMap::new();
         for (agent_name, definition) in agents {
             if agent_name == "default" {
                 continue;
             }
-            if let Some(selection) = definition.selection {
-                agent_selections.insert(agent_name, selection);
+            if let Some(selection) = definition.selection.clone() {
+                agent_selections.insert(agent_name.clone(), selection);
             }
+            agent_definitions.insert(agent_name, definition);
         }
         Self {
             runtime,
             default_selection,
             agent_selections,
+            agent_definitions,
             contexts: Mutex::new(HashMap::new()),
         }
     }
@@ -150,6 +164,7 @@ fn augment_prompt_with_attachment_metadata(prompt: String, attachments: &[Inline
 
 #[async_trait]
 impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
+    #[allow(clippy::too_many_arguments)]
     async fn run_turn(
         &self,
         user_id: &str,
@@ -158,6 +173,7 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
         cancellation: CancellationToken,
         delta_sender: mpsc::UnboundedSender<StreamItem>,
         origin: TurnOrigin,
+        policy: Option<RunPolicyInput>,
     ) -> Result<Response, RuntimeError> {
         let UserTurnInput {
             prompt,
@@ -199,6 +215,7 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
             channel_id,
             channel_context_id,
             inbound_attachments,
+            ..Default::default()
         };
 
         // Strip attachment bytes from older user messages to prevent unbounded
@@ -227,17 +244,42 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
         let runtime = Arc::clone(&self.runtime);
         let session_id_owned = session_id.to_owned();
         let runtime_cancellation = cancellation.clone();
+        let resolved_policy = policy
+            .as_ref()
+            .map(|per_run| {
+                self.resolve_session_policy(effective_agent_name, per_run)
+                    .map_err(|error| {
+                        RuntimeError::Provider(ProviderError::RequestFailed {
+                            provider: ProviderId::from("policy_guard"),
+                            message: format!("policy validation failed: {error}"),
+                        })
+                    })
+            })
+            .transpose()?;
         let runtime_future = async move {
             let mut run_context = context;
-            let result = runtime
-                .run_session_for_session_with_stream_events(
-                    &session_id_owned,
-                    &mut run_context,
-                    &runtime_cancellation,
-                    stream_events_tx,
-                    &tool_context,
-                )
-                .await;
+            let result = if let Some(policy) = resolved_policy {
+                runtime
+                    .run_session_for_session_with_policy(
+                        &session_id_owned,
+                        &mut run_context,
+                        &runtime_cancellation,
+                        stream_events_tx,
+                        &tool_context,
+                        policy,
+                    )
+                    .await
+            } else {
+                runtime
+                    .run_session_for_session_with_stream_events(
+                        &session_id_owned,
+                        &mut run_context,
+                        &runtime_cancellation,
+                        stream_events_tx,
+                        &tool_context,
+                    )
+                    .await
+            };
             (result, run_context)
         };
         tokio::pin!(runtime_future);
@@ -290,6 +332,42 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
     async fn drop_session_context(&self, session_id: &str) {
         self.contexts.lock().await.remove(session_id);
     }
+
+    fn resolve_session_policy(
+        &self,
+        agent_name: &str,
+        per_run: &RunPolicyInput,
+    ) -> Result<EffectiveRunPolicy, PolicyValidationError> {
+        // Build RuntimeConfig from runtime limits
+        let limits = self.runtime.limits();
+        let global_config = types::RuntimeConfig {
+            turn_timeout_secs: limits.turn_timeout.as_secs(),
+            max_turns: limits.max_turns as u32,
+            max_cost: limits.max_cost,
+            context_budget: Default::default(),
+            summarization: Default::default(),
+        };
+
+        // Get agent definition (or use empty one if not found)
+        let agent_def =
+            self.agent_definitions
+                .get(agent_name)
+                .cloned()
+                .unwrap_or(types::AgentDefinition {
+                    system_prompt: None,
+                    system_prompt_file: None,
+                    selection: None,
+                    tools: None,
+                    max_turns: None,
+                    max_cost: None,
+                });
+
+        // Get available tools from runtime
+        let available_tools = self.runtime.tool_schemas();
+
+        // Call the policy resolution function
+        resolve_policy(&global_config, &agent_def, per_run, &available_tools)
+    }
 }
 
 #[async_trait]
@@ -301,6 +379,7 @@ impl ScheduledTurnRunner for RuntimeGatewayTurnRunner {
         prompt: String,
         channel_capabilities: Option<ChannelCapabilities>,
         cancellation: CancellationToken,
+        policy: Option<EffectiveRunPolicy>,
     ) -> Result<(String, Vec<MediaAttachment>), RuntimeError> {
         let (delta_tx, mut delta_rx) = mpsc::unbounded_channel();
         let input = UserTurnInput {
@@ -311,9 +390,60 @@ impl ScheduledTurnRunner for RuntimeGatewayTurnRunner {
             channel_capabilities,
             ..TurnOrigin::default()
         };
-        let response = self
-            .run_turn(user_id, session_id, input, cancellation, delta_tx, origin)
-            .await?;
+        let mut context = {
+            let mut contexts = self.contexts.lock().await;
+            contexts
+                .entry(session_id.to_owned())
+                .or_insert_with(|| self.base_context("default"))
+                .clone()
+        };
+
+        let tool_context = types::ToolExecutionContext {
+            user_id: Some(user_id.to_owned()),
+            session_id: Some(session_id.to_owned()),
+            provider: Some(context.provider.clone()),
+            model: Some(context.model.clone()),
+            channel_capabilities: origin.channel_capabilities.clone(),
+            event_sender: None,
+            channel_id: origin.channel_id.clone(),
+            channel_context_id: origin.channel_context_id.clone(),
+            inbound_attachments: None,
+            ..Default::default()
+        };
+
+        context.messages.push(Message {
+            role: MessageRole::User,
+            content: Some(input.prompt),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            attachments: Vec::new(),
+        });
+
+        let response = if let Some(policy) = policy {
+            self.runtime
+                .run_session_for_session_with_policy(
+                    session_id,
+                    &mut context,
+                    &cancellation,
+                    delta_tx,
+                    &tool_context,
+                    policy,
+                )
+                .await?
+        } else {
+            self.runtime
+                .run_session_for_session_with_stream_events(
+                    session_id,
+                    &mut context,
+                    &cancellation,
+                    delta_tx,
+                    &tool_context,
+                )
+                .await?
+        };
+
+        let mut contexts = self.contexts.lock().await;
+        contexts.insert(session_id.to_owned(), context);
 
         // Collect any media attachments emitted by send_media during this turn.
         let mut media = Vec::new();

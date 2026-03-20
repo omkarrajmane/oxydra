@@ -3,6 +3,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::MemoryError;
 
+/// Status of a session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionStatus {
+    pub turn: usize,
+    pub budget_remaining: Option<u64>,
+    pub is_active: bool,
+    pub stop_reason: Option<crate::policy::StopReason>,
+}
+
 /// Metadata record for a gateway session, persisted across restarts.
 ///
 /// Active session state (broadcast channels, turn locks) lives in memory;

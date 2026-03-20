@@ -172,6 +172,20 @@ pub enum StreamItem {
     /// A media attachment emitted by the `send_media` tool. Forwarded through
     /// the gateway to the channel adapter for delivery to the user.
     Media(crate::channel::MediaAttachment),
+    /// A policy-related event emitted by the runtime (e.g. budget warnings, stops).
+    PolicyEvent(PolicyStreamEvent),
+}
+
+/// A policy-related event emitted during streaming execution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum PolicyStreamEvent {
+    /// Emitted when the remaining budget falls below a certain threshold (e.g. 80%, 95%).
+    BudgetWarning { remaining: u64, threshold_pct: u8 },
+    /// Emitted when the run is stopped due to a policy violation.
+    PolicyStop { reason: crate::policy::StopReason },
+    /// Emitted after cost settlement to update the remaining budget.
+    BudgetUpdate { remaining: u64 },
 }
 
 /// A progress notification emitted by the runtime during a multi-step turn.

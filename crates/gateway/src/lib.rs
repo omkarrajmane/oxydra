@@ -41,7 +41,7 @@ mod tests;
 use runtime::SchedulerNotifier;
 pub use session::SessionState as GatewaySessionState;
 use session::{ActiveTurnState, SessionState, UserState};
-pub use turn_runner::{GatewayTurnRunner, RuntimeGatewayTurnRunner, TurnOrigin};
+pub use turn_runner::{GatewayTurnRunner, RuntimeGatewayTurnRunner, TurnOrigin, UserTurnInput};
 
 const WS_ROUTE: &str = "/ws";
 const GATEWAY_CHANNEL_ID: &str = "tui";
@@ -440,6 +440,40 @@ impl GatewayServer {
             }
         }
         cancelled
+    }
+
+    /// Cancel the active turn for a specific session.
+    pub async fn cancel_session(&self, user_id: &str, session_id: &str) -> Result<(), String> {
+        let session = self
+            .create_or_get_session(user_id, Some(session_id), "default", "sdk")
+            .await?;
+        if Self::cancel_session_active_turn(&session).await {
+            Ok(())
+        } else {
+            Err("no active turn to cancel".to_owned())
+        }
+    }
+
+    /// Get the status of a specific session.
+    pub async fn get_session_status(
+        &self,
+        user_id: &str,
+        session_id: &str,
+    ) -> Result<types::SessionStatus, String> {
+        let session = self
+            .create_or_get_session(user_id, Some(session_id), "default", "sdk")
+            .await?;
+        let turn = session.turn_count.load(Ordering::Relaxed);
+        let budget_remaining = *session.budget_remaining.lock().await;
+        let is_active = session.active_turn.lock().await.is_some();
+        let stop_reason = session.stop_reason.lock().await.clone();
+
+        Ok(types::SessionStatus {
+            turn,
+            budget_remaining,
+            is_active,
+            stop_reason,
+        })
     }
 
     /// Subscribe to server-sent events for a session.
@@ -1112,6 +1146,7 @@ impl GatewayServer {
                 cancellation,
                 delta_tx,
                 origin_with_caps,
+                None,
             );
             tokio::pin!(runtime_future);
 
@@ -1130,12 +1165,19 @@ impl GatewayServer {
                                         }));
                                     }
                                     Some(StreamItem::Progress(progress)) => {
+                                        session.turn_count.store(progress.turn, Ordering::Relaxed);
                                         session.publish(GatewayServerFrame::TurnProgress(GatewayTurnProgress {
                                             request_id: send_turn.request_id.clone(),
                                             session: session.gateway_session(),
                                             turn: running_turn.clone(),
                                             progress,
                                         }));
+                                    }
+                                    Some(StreamItem::PolicyEvent(types::PolicyStreamEvent::BudgetUpdate { remaining })) => {
+                                        *session.budget_remaining.lock().await = Some(remaining);
+                                    }
+                                    Some(StreamItem::PolicyEvent(types::PolicyStreamEvent::PolicyStop { reason })) => {
+                                        *session.stop_reason.lock().await = Some(reason);
                                     }
                                     Some(StreamItem::Media(attachment)) => {
                                         session.publish(GatewayServerFrame::MediaAttachment(types::GatewayMediaAttachment {
@@ -1160,6 +1202,7 @@ impl GatewayServer {
             let terminal_frame = match inner_result {
                 Ok(Ok(response)) => {
                     tracing::info!(turn_id = %send_turn.turn_id, "turn completed");
+                    *session.stop_reason.lock().await = Some(types::policy::StopReason::Completed);
                     GatewayServerFrame::TurnCompleted(GatewayTurnCompleted {
                         request_id: send_turn.request_id.clone(),
                         session: session.gateway_session(),
@@ -1172,6 +1215,7 @@ impl GatewayServer {
                 }
                 Ok(Err(RuntimeError::Cancelled)) => {
                     tracing::info!(turn_id = %send_turn.turn_id, "turn cancelled");
+                    *session.stop_reason.lock().await = Some(types::policy::StopReason::Cancelled);
                     GatewayServerFrame::TurnCancelled(GatewayTurnCancelled {
                         request_id: send_turn.request_id.clone(),
                         session: session.gateway_session(),
@@ -1181,12 +1225,31 @@ impl GatewayServer {
                         },
                     })
                 }
+                Ok(Err(RuntimeError::BudgetExceeded)) => {
+                    tracing::warn!(
+                        turn_id = %send_turn.turn_id,
+                        "turn failed: budget exceeded"
+                    );
+                    *session.stop_reason.lock().await =
+                        Some(types::policy::StopReason::MaxBudgetExceeded);
+                    GatewayServerFrame::Error(GatewayErrorFrame {
+                        request_id: Some(send_turn.request_id.clone()),
+                        session: Some(session.gateway_session()),
+                        turn: Some(GatewayTurnStatus {
+                            turn_id: send_turn.turn_id.clone(),
+                            state: GatewayTurnState::Failed,
+                        }),
+                        message: RuntimeError::BudgetExceeded.to_string(),
+                    })
+                }
                 Ok(Err(error)) => {
                     tracing::warn!(
                         turn_id = %send_turn.turn_id,
                         %error,
                         "turn failed"
                     );
+                    *session.stop_reason.lock().await =
+                        Some(types::policy::StopReason::Error(error.to_string()));
                     GatewayServerFrame::Error(GatewayErrorFrame {
                         request_id: Some(send_turn.request_id.clone()),
                         session: Some(session.gateway_session()),
@@ -1208,6 +1271,9 @@ impl GatewayServer {
                         panic = %panic_message,
                         "turn panicked"
                     );
+                    *session.stop_reason.lock().await = Some(types::policy::StopReason::Error(
+                        format!("internal error: turn panicked: {panic_message}"),
+                    ));
                     GatewayServerFrame::Error(GatewayErrorFrame {
                         request_id: Some(send_turn.request_id.clone()),
                         session: Some(session.gateway_session()),
@@ -1445,13 +1511,7 @@ impl GatewayServer {
         let max_queued_turns = self.max_queued_turns;
         users
             .entry(user_id.to_owned())
-            .or_insert_with(|| {
-                Arc::new(UserState::new(
-                    user_id.to_owned(),
-                    max_concurrent_turns,
-                    max_queued_turns,
-                ))
-            })
+            .or_insert_with(|| Arc::new(UserState::new(max_concurrent_turns, max_queued_turns)))
             .clone()
     }
 }

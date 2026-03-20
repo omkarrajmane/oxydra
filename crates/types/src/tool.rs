@@ -95,6 +95,14 @@ pub struct ToolExecutionContext {
     /// Inbound attachments from the current user turn for tools that need raw
     /// bytes (for example `attachment_save`).
     pub inbound_attachments: Option<Arc<Vec<InlineMedia>>>,
+    /// The effective policy for the current run.
+    pub policy: Option<Arc<crate::policy::EffectiveRunPolicy>>,
+    /// The permission handler for the current run.
+    pub permission_handler: Option<Arc<dyn crate::policy::ToolPermissionHandler>>,
+    /// The current turn number.
+    pub turn: Option<u32>,
+    /// The remaining budget for the current run.
+    pub remaining_budget: Option<u64>,
 }
 
 impl std::fmt::Debug for ToolExecutionContext {

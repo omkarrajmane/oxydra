@@ -4,6 +4,8 @@ mod delegation;
 mod error;
 mod memory;
 mod model;
+pub mod policy;
+mod policy_merge;
 mod proactive;
 mod provider;
 mod runner;
@@ -49,10 +51,15 @@ pub use memory::{
 pub use model::{
     CapsOverrideEntry, CapsOverrides, CatalogProvider, Context, InlineMedia, InputModality,
     InterleavedSpec, Message, MessageRole, Modalities, ModelCatalog, ModelCost, ModelDescriptor,
-    ModelId, ModelInputCaps, ModelLimits, ProviderCaps, ProviderId, Response, RuntimeProgressEvent,
-    RuntimeProgressKind, StreamItem, ToolCall, ToolCallDelta, UsageUpdate, derive_caps,
-    derive_input_caps,
+    ModelId, ModelInputCaps, ModelLimits, PolicyStreamEvent, ProviderCaps, ProviderId, Response,
+    RuntimeProgressEvent, RuntimeProgressKind, StreamItem, ToolCall, ToolCallDelta, UsageUpdate,
+    derive_caps, derive_input_caps,
 };
+pub use policy::{
+    DefaultToolPermissionHandler, EffectiveRunPolicy, RolloutMode, RunPolicyInput, StopReason,
+    ToolPermissionContext, ToolPermissionDecision, ToolPermissionHandler, ToolPolicyInput,
+};
+pub use policy_merge::merge_policy;
 pub use proactive::{DeliveryStreakUpdater, ProactiveSender, RouteDeliveryOutcome};
 pub use provider::{Provider, ProviderStream};
 pub use runner::{
@@ -74,7 +81,7 @@ pub use scheduler::{
     NotificationPolicy, ScheduleCadence, ScheduleDefinition, SchedulePatch, ScheduleRunRecord,
     ScheduleRunStatus, ScheduleSearchFilters, ScheduleSearchResult, ScheduleStatus,
 };
-pub use session::{SessionRecord, SessionStore};
+pub use session::{SessionRecord, SessionStatus, SessionStore};
 pub use skill::{
     CHARS_PER_TOKEN, MAX_SKILL_TOKENS, RenderedSkill, Skill, SkillActivation, SkillMetadata,
     SkillValidationError, validate_skill_content,

@@ -19,12 +19,14 @@ const WEB_SEARCH_RESPONSE_BYTES: usize = 1_024 * 1_024;
 const GOOGLE_SEARCH_BASE_URL: &str = "https://www.googleapis.com/customsearch/v1";
 const DUCKDUCKGO_SEARCH_BASE_URL: &str = "https://api.duckduckgo.com/";
 const SEARXNG_SEARCH_PATH: &str = "/search";
+const EXA_SEARCH_BASE_URL: &str = "https://api.exa.ai/search";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SearchProviderKind {
     DuckDuckGo,
     Google,
     Searxng,
+    Exa,
 }
 
 impl SearchProviderKind {
@@ -33,19 +35,21 @@ impl SearchProviderKind {
             "duckduckgo" => Ok(Self::DuckDuckGo),
             "google" => Ok(Self::Google),
             "searxng" => Ok(Self::Searxng),
+            "exa" => Ok(Self::Exa),
             _ => Err(format!(
-                "unsupported web search provider `{raw}`; expected duckduckgo, google, or searxng"
+                "unsupported web search provider `{raw}`; expected duckduckgo, google, searxng, or exa"
             )),
         }
     }
 
     fn as_str(self) -> &'static str {
-        match self {
-            Self::DuckDuckGo => "duckduckgo",
-            Self::Google => "google",
-            Self::Searxng => "searxng",
+            match self {
+                Self::DuckDuckGo => "duckduckgo",
+                Self::Google => "google",
+                Self::Searxng => "searxng",
+                Self::Exa => "exa",
+            }
         }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +62,7 @@ struct SearchProviderConfig {
     searxng_categories: Option<String>,
     searxng_safesearch: Option<u8>,
     query_params: BTreeMap<String, String>,
+    exa_api_key: Option<String>,
 }
 
 enum SearchPayload {
@@ -173,6 +178,8 @@ fn search_provider_from_env() -> Result<SearchProviderConfig, String> {
         searxng_safesearch: env_non_empty("OXYDRA_WEB_SEARCH_SEARXNG_SAFESEARCH")
             .and_then(|value| value.parse::<u8>().ok()),
         query_params,
+        exa_api_key: env_non_empty("OXYDRA_WEB_SEARCH_EXA_API_KEY")
+            .or_else(|| env_non_empty("EXA_API_KEY")),
     })
 }
 
@@ -192,6 +199,11 @@ fn provider_base_urls_from_env(kind: SearchProviderKind) -> Vec<String> {
             "OXYDRA_WEB_SEARCH_SEARXNG_BASE_URL",
             "OXYDRA_WEB_SEARCH_SEARXNG_BASE_URLS",
             None,
+        ),
+        SearchProviderKind::Exa => collect_base_urls(
+            "OXYDRA_WEB_SEARCH_EXA_BASE_URL",
+            "OXYDRA_WEB_SEARCH_EXA_BASE_URLS",
+            Some(EXA_SEARCH_BASE_URL),
         ),
     }
 }
@@ -288,6 +300,9 @@ async fn fetch_search_payload_from_base_url(
         }
         SearchProviderKind::Searxng => {
             build_searxng_search_request(http_client, provider, base_url, query, count, freshness)
+        }
+        SearchProviderKind::Exa => {
+            build_exa_search_request(http_client, provider, base_url, query, count)?
         }
     };
     let request_url = request
@@ -437,6 +452,31 @@ fn build_searxng_search_request(
     request_with_default_headers(http_client.get(url)).query(&params)
 }
 
+fn build_exa_search_request(
+    http_client: &Client,
+    provider: &SearchProviderConfig,
+    base_url: &str,
+    query: &str,
+    count: usize,
+) -> Result<RequestBuilder, String> {
+    let api_key = provider.exa_api_key.as_ref().ok_or_else(|| {
+        "exa search provider requires OXYDRA_WEB_SEARCH_EXA_API_KEY or EXA_API_KEY".to_owned()
+    })?;
+    
+    let body = json!({
+        "query": query,
+        "numResults": count.clamp(1, 10),
+    });
+    
+    let body_string = serde_json::to_string(&body)
+        .map_err(|e| format!("failed to serialize request body: {}", e))?;
+    
+    Ok(request_with_default_headers(http_client.post(base_url))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .body(body_string))
+}
+
 fn merge_query_params(params: &mut Vec<(String, String)>, extras: &BTreeMap<String, String>) {
     for (key, value) in extras {
         if let Some(existing) = params
@@ -482,6 +522,12 @@ fn parse_search_results(
                     Ok(results)
                 }
             }
+        },
+        SearchProviderKind::Exa => match payload {
+            SearchPayload::Json(payload) => Ok(parse_exa_search_results(&payload, count)),
+            SearchPayload::Text(_) => Err(
+                "exa search did not return JSON response; verify provider endpoint".to_owned(),
+            ),
         },
     }
 }
@@ -541,6 +587,31 @@ fn parse_searxng_search_results(payload: &Value, count: usize) -> Vec<Value> {
                 "title": item.get("title").and_then(Value::as_str).unwrap_or(""),
                 "url": item.get("url").and_then(Value::as_str).unwrap_or(""),
                 "display_url": item.get("pretty_url").and_then(Value::as_str),
+                "snippet": snippet
+            })
+        })
+        .collect()
+}
+
+fn parse_exa_search_results(payload: &Value, count: usize) -> Vec<Value> {
+    let Some(items) = payload.get("results").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .take(count)
+        .enumerate()
+        .map(|(index, item)| {
+            let snippet = item
+                .get("snippet")
+                .and_then(Value::as_str)
+                .map(clean_search_snippet)
+                .unwrap_or_default();
+            json!({
+                "index": index + 1,
+                "title": item.get("title").and_then(Value::as_str).unwrap_or(""),
+                "url": item.get("url").and_then(Value::as_str).unwrap_or(""),
+                "display_url": Value::Null,
                 "snippet": snippet
             })
         })

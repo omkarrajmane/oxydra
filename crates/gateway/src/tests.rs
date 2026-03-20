@@ -43,6 +43,7 @@ impl ScriptedTurnRunner {
 
 #[async_trait]
 impl GatewayTurnRunner for ScriptedTurnRunner {
+    #[allow(clippy::too_many_arguments)]
     async fn run_turn(
         &self,
         _user_id: &str,
@@ -51,6 +52,7 @@ impl GatewayTurnRunner for ScriptedTurnRunner {
         cancellation: CancellationToken,
         delta_sender: mpsc::UnboundedSender<StreamItem>,
         origin: turn_runner::TurnOrigin,
+        _policy: Option<types::RunPolicyInput>,
     ) -> Result<Response, RuntimeError> {
         self.recorded_calls.lock().await.push((
             session_id.to_owned(),
@@ -112,6 +114,29 @@ impl GatewayTurnRunner for ScriptedTurnRunner {
             .lock()
             .await
             .push(session_id.to_owned());
+    }
+    fn resolve_session_policy(
+        &self,
+        _agent_name: &str,
+        per_run: &types::RunPolicyInput,
+    ) -> Result<types::EffectiveRunPolicy, runtime::PolicyValidationError> {
+        // Test implementation: return a default effective policy
+        use chrono::Utc;
+        Ok(types::EffectiveRunPolicy {
+            started_at: Utc::now(),
+            deadline: per_run.max_runtime.map(|d| {
+                Utc::now()
+                    + chrono::Duration::from_std(d).unwrap_or_else(|_| chrono::Duration::seconds(0))
+            }),
+            initial_budget_microusd: per_run.max_budget_microusd.unwrap_or(0),
+            remaining_budget_microusd: per_run.max_budget_microusd.unwrap_or(0),
+            toolset: vec![],
+            auto_approve_tools: std::collections::HashSet::new(),
+            disallowed_tools: std::collections::HashSet::new(),
+            parent_run_id: None,
+            max_turns: per_run.max_turns,
+            rollout_mode: types::RolloutMode::Enforce,
+        })
     }
 }
 
@@ -2337,6 +2362,7 @@ fn make_tui_schedule(user_id: &str, session_id: &str) -> ScheduleDefinition {
         consecutive_failures: 0,
         channel_id: Some("tui".to_owned()),
         channel_context_id: Some(session_id.to_owned()),
+        policy: None,
     }
 }
 

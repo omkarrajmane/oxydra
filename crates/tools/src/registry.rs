@@ -60,6 +60,27 @@ impl ToolRegistry {
         self.tools.values().map(|tool| tool.schema()).collect()
     }
 
+    pub fn filtered_schemas(
+        &self,
+        effective_toolset: Option<&std::collections::HashSet<String>>,
+        disallowed: &std::collections::HashSet<String>,
+    ) -> Vec<FunctionDecl> {
+        self.tools
+            .values()
+            .filter_map(|tool| {
+                let schema = tool.schema();
+                let is_allowed = effective_toolset.is_none_or(|set| set.contains(&schema.name));
+                let is_disallowed = disallowed.contains(&schema.name);
+
+                if is_allowed && !is_disallowed {
+                    Some(schema)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn set_security_policy(&mut self, policy: Arc<dyn SecurityPolicy>) {
         self.security_policy = Some(policy);
     }
@@ -116,9 +137,75 @@ impl ToolRegistry {
             .get(name)
             .ok_or_else(|| execution_failed(name, format!("unknown tool `{name}`")))?;
 
+        if let Some(policy) = &context.policy && policy.disallowed_tools.contains(name) {
+            // Check rollout mode for disallowed tool enforcement
+            match policy.rollout_mode {
+                types::RolloutMode::Enforce => {
+                    return Err(ToolError::PolicyViolation(
+                        types::StopReason::ToolDisallowed,
+                    ));
+                }
+                types::RolloutMode::SoftFail => {
+                    // Log warning and emit event, but allow the tool to execute
+                    tracing::warn!(
+                        tool = name,
+                        "disallowed tool allowed due to SoftFail rollout mode"
+                    );
+                    if let Some(ref sender) = context.event_sender {
+                        let _ = sender.send(types::StreamItem::PolicyEvent(
+                            types::PolicyStreamEvent::PolicyStop {
+                                reason: types::StopReason::ToolDisallowed,
+                            },
+                        ));
+                    }
+                    // Continue to execute the tool (don't return error)
+                }
+                types::RolloutMode::ObserveOnly => {
+                    // Log only, allow the tool to execute
+                    tracing::warn!(
+                        tool = name,
+                        "disallowed tool observed but allowed due to ObserveOnly rollout mode"
+                    );
+                    // Continue to execute the tool (don't return error)
+                }
+            }
+        }
+
+        let mut final_args = args.to_string();
+        if let Some(handler) = &context.permission_handler {
+            let is_auto_approved = context
+                .policy
+                .as_ref()
+                .is_some_and(|p| p.auto_approve_tools.contains(name));
+            if !is_auto_approved {
+                let parsed_args = serde_json::from_str(args).unwrap_or_default();
+                let perm_context = types::ToolPermissionContext {
+                    session_id: context.session_id.clone().unwrap_or_default(),
+                    user_id: context.user_id.clone().unwrap_or_default(),
+                    turn: context.turn.unwrap_or(0),
+                    remaining_budget: context.remaining_budget.unwrap_or(0),
+                };
+                match handler
+                    .check_permission(name, &parsed_args, &perm_context)
+                    .await
+                {
+                    types::ToolPermissionDecision::Allow => {}
+                    types::ToolPermissionDecision::Deny { .. } => {
+                        return Err(ToolError::PolicyViolation(
+                            types::StopReason::ToolPermissionDenied,
+                        ));
+                    }
+                    types::ToolPermissionDecision::AllowWithModification { modified_args } => {
+                        final_args = serde_json::to_string(&modified_args)
+                            .map_err(ToolError::Serialization)?;
+                    }
+                }
+            }
+        }
+
         safety_gate(tool.safety_tier())?;
         if let Some(policy) = &self.security_policy {
-            let arguments = parse_policy_args(name, args)?;
+            let arguments = parse_policy_args(name, &final_args)?;
             policy
                 .enforce(name, tool.safety_tier(), &arguments)
                 .map_err(|violation| {
@@ -133,7 +220,7 @@ impl ToolRegistry {
         }
 
         let timeout = tool.timeout();
-        let output = tokio::time::timeout(timeout, tool.execute(args, context))
+        let output = tokio::time::timeout(timeout, tool.execute(&final_args, context))
             .await
             .map_err(|_| execution_failed(name, format!("tool timed out after {timeout:?}")))??;
 
@@ -352,3 +439,294 @@ fn register_runtime_tools(
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    mod filtered {
+        use super::*;
+
+        #[test]
+        fn returns_all_when_no_policy() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+
+            let disallowed = HashSet::new();
+            let schemas = registry.filtered_schemas(None, &disallowed);
+
+            assert_eq!(schemas.len(), 2);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(names.contains(FILE_READ_TOOL_NAME));
+            assert!(names.contains(FILE_WRITE_TOOL_NAME));
+        }
+
+        #[test]
+        fn filters_by_allowed_subset() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+            registry.register(SHELL_EXEC_TOOL_NAME, BashTool::default());
+
+            let mut allowed = HashSet::new();
+            allowed.insert(FILE_READ_TOOL_NAME.to_string());
+            allowed.insert(SHELL_EXEC_TOOL_NAME.to_string());
+
+            let disallowed = HashSet::new();
+            let schemas = registry.filtered_schemas(Some(&allowed), &disallowed);
+
+            assert_eq!(schemas.len(), 2);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(names.contains(FILE_READ_TOOL_NAME));
+            assert!(names.contains(SHELL_EXEC_TOOL_NAME));
+            assert!(!names.contains(FILE_WRITE_TOOL_NAME));
+        }
+
+        #[test]
+        fn returns_empty_when_allowed_is_empty() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+
+            let allowed = HashSet::new();
+            let disallowed = HashSet::new();
+            let schemas = registry.filtered_schemas(Some(&allowed), &disallowed);
+
+            assert!(schemas.is_empty());
+        }
+
+        #[test]
+        fn disallowed_overrides_allowed() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+            registry.register(SHELL_EXEC_TOOL_NAME, BashTool::default());
+
+            let mut allowed = HashSet::new();
+            allowed.insert(FILE_READ_TOOL_NAME.to_string());
+            allowed.insert(FILE_WRITE_TOOL_NAME.to_string());
+
+            let mut disallowed = HashSet::new();
+            disallowed.insert(FILE_WRITE_TOOL_NAME.to_string());
+
+            let schemas = registry.filtered_schemas(Some(&allowed), &disallowed);
+
+            assert_eq!(schemas.len(), 1);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(names.contains(FILE_READ_TOOL_NAME));
+            assert!(!names.contains(FILE_WRITE_TOOL_NAME));
+        }
+
+        #[test]
+        fn disallowed_works_without_allowed_set() {
+            let mut registry = ToolRegistry::default();
+            registry.register(FILE_READ_TOOL_NAME, ReadTool::default());
+            registry.register(FILE_WRITE_TOOL_NAME, WriteTool::default());
+
+            let mut disallowed = HashSet::new();
+            disallowed.insert(FILE_READ_TOOL_NAME.to_string());
+
+            let schemas = registry.filtered_schemas(None, &disallowed);
+
+            assert_eq!(schemas.len(), 1);
+            let names: HashSet<_> = schemas.into_iter().map(|s| s.name).collect();
+            assert!(!names.contains(FILE_READ_TOOL_NAME));
+            assert!(names.contains(FILE_WRITE_TOOL_NAME));
+        }
+    }
+
+    mod dispatch_policy {
+        use super::*;
+        use async_trait::async_trait;
+        use types::policy::{
+            EffectiveRunPolicy, StopReason, ToolPermissionContext, ToolPermissionDecision,
+            ToolPermissionHandler,
+        };
+
+        struct MockTool {
+            name: String,
+        }
+
+        #[async_trait]
+        impl Tool for MockTool {
+            fn schema(&self) -> types::FunctionDecl {
+                types::FunctionDecl::new(&self.name, None, serde_json::json!({}))
+            }
+
+            async fn execute(
+                &self,
+                _args: &str,
+                _context: &ToolExecutionContext,
+            ) -> Result<String, ToolError> {
+                Ok("success".to_string())
+            }
+
+            fn timeout(&self) -> std::time::Duration {
+                std::time::Duration::from_secs(1)
+            }
+
+            fn safety_tier(&self) -> SafetyTier {
+                SafetyTier::ReadOnly
+            }
+        }
+
+        struct DenyHandler;
+
+        #[async_trait]
+        impl ToolPermissionHandler for DenyHandler {
+            async fn check_permission(
+                &self,
+                _tool_name: &str,
+                _arguments: &serde_json::Value,
+                _context: &ToolPermissionContext,
+            ) -> ToolPermissionDecision {
+                ToolPermissionDecision::Deny {
+                    reason: "denied".to_string(),
+                }
+            }
+        }
+
+        struct ModifyHandler;
+
+        #[async_trait]
+        impl ToolPermissionHandler for ModifyHandler {
+            async fn check_permission(
+                &self,
+                _tool_name: &str,
+                _arguments: &serde_json::Value,
+                _context: &ToolPermissionContext,
+            ) -> ToolPermissionDecision {
+                ToolPermissionDecision::AllowWithModification {
+                    modified_args: serde_json::json!({"modified": true}),
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn blocks_disallowed_tool() {
+            let mut registry = ToolRegistry::default();
+            registry.register(
+                "test_tool",
+                MockTool {
+                    name: "test_tool".to_string(),
+                },
+            );
+
+            let mut policy = EffectiveRunPolicy {
+                started_at: chrono::Utc::now(),
+                deadline: None,
+                initial_budget_microusd: 1000,
+                remaining_budget_microusd: 1000,
+                toolset: vec![],
+                auto_approve_tools: HashSet::new(),
+                disallowed_tools: HashSet::new(),
+                parent_run_id: None,
+                max_turns: None,
+                rollout_mode: types::policy::RolloutMode::Enforce,
+            };
+            policy.disallowed_tools.insert("test_tool".to_string());
+
+            let context = ToolExecutionContext {
+                policy: Some(std::sync::Arc::new(policy)),
+                ..Default::default()
+            };
+
+            let result = registry
+                .execute_with_policy_and_context("test_tool", "{}", |_| Ok(()), &context)
+                .await;
+
+            assert!(matches!(
+                result,
+                Err(ToolError::PolicyViolation(StopReason::ToolDisallowed))
+            ));
+        }
+
+        #[tokio::test]
+        async fn handler_denies_tool() {
+            let mut registry = ToolRegistry::default();
+            registry.register(
+                "test_tool",
+                MockTool {
+                    name: "test_tool".to_string(),
+                },
+            );
+
+            let context = ToolExecutionContext {
+                permission_handler: Some(std::sync::Arc::new(DenyHandler)),
+                ..Default::default()
+            };
+
+            let result = registry
+                .execute_with_policy_and_context("test_tool", "{}", |_| Ok(()), &context)
+                .await;
+
+            assert!(matches!(
+                result,
+                Err(ToolError::PolicyViolation(StopReason::ToolPermissionDenied))
+            ));
+        }
+
+        #[tokio::test]
+        async fn auto_approved_bypasses_handler() {
+            let mut registry = ToolRegistry::default();
+            registry.register(
+                "test_tool",
+                MockTool {
+                    name: "test_tool".to_string(),
+                },
+            );
+
+            let mut policy = EffectiveRunPolicy {
+                started_at: chrono::Utc::now(),
+                deadline: None,
+                initial_budget_microusd: 1000,
+                remaining_budget_microusd: 1000,
+                toolset: vec![],
+                auto_approve_tools: HashSet::new(),
+                disallowed_tools: HashSet::new(),
+                parent_run_id: None,
+                max_turns: None,
+                rollout_mode: types::policy::RolloutMode::Enforce,
+            };
+            policy.auto_approve_tools.insert("test_tool".to_string());
+
+            let context = ToolExecutionContext {
+                policy: Some(std::sync::Arc::new(policy)),
+                permission_handler: Some(std::sync::Arc::new(DenyHandler)), // Would deny if called
+                ..Default::default()
+            };
+
+            let result = registry
+                .execute_with_policy_and_context("test_tool", "{}", |_| Ok(()), &context)
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn handler_modifies_args() {
+            let mut registry = ToolRegistry::default();
+            registry.register(
+                "test_tool",
+                MockTool {
+                    name: "test_tool".to_string(),
+                },
+            );
+
+            let context = ToolExecutionContext {
+                permission_handler: Some(std::sync::Arc::new(ModifyHandler)),
+                ..Default::default()
+            };
+
+            let result = registry
+                .execute_with_policy_and_context("test_tool", "{}", |_| Ok(()), &context)
+                .await;
+
+            // Should succeed with modified args
+            assert!(result.is_ok());
+        }
+    }
+}
+

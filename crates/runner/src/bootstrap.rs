@@ -78,8 +78,13 @@ impl ConfigSearchPaths {
         let workspace_dir = if let Some(parent) = path.parent() {
             if parent.as_os_str().is_empty() {
                 env::current_dir()?.join(WORKSPACE_CONFIG_DIR)
-            } else {
+            } else if parent
+                .file_name()
+                .is_some_and(|name| name == WORKSPACE_CONFIG_DIR)
+            {
                 parent.to_path_buf()
+            } else {
+                parent.join(WORKSPACE_CONFIG_DIR)
             }
         } else {
             env::current_dir()?.join(WORKSPACE_CONFIG_DIR)
@@ -500,7 +505,7 @@ pub async fn build_memory_backend(
 pub fn runtime_limits(config: &AgentConfig) -> RuntimeLimits {
     RuntimeLimits {
         turn_timeout: Duration::from_secs(config.runtime.turn_timeout_secs),
-        max_turns: config.runtime.max_turns,
+        max_turns: config.runtime.max_turns as usize,
         max_cost: config.runtime.max_cost,
         context_budget: ContextBudgetLimits {
             trigger_ratio: config.runtime.context_budget.trigger_ratio,

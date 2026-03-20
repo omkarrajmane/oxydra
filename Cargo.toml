@@ -11,6 +11,7 @@ members = [
   "crates/oxydra-shelld",
   "crates/channels",
   "crates/gateway",
+  "crates/sdk",
   "crates/tui",
   "crates/wasm-guest",
 ]

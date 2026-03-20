@@ -415,6 +415,11 @@ impl TuiChannelAdapter {
                     state.clear_active_turn();
                 }
             }
+            GatewayServerFrame::PolicyNotification(_) => {
+                // Policy notifications are informational — they indicate policy
+                // enforcement events (e.g., budget exceeded, max turns reached).
+                // The TUI displays these as system messages via the ui_model.
+            }
             GatewayServerFrame::MediaAttachment(_) => {
                 // Media attachments are handled by rich channel adapters
                 // (Telegram, etc.). The TUI ignores them — the text response

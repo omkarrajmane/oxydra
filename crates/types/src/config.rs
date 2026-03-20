@@ -154,7 +154,7 @@ pub struct RuntimeConfig {
     #[serde(default = "default_turn_timeout_secs")]
     pub turn_timeout_secs: u64,
     #[serde(default = "default_max_turns")]
-    pub max_turns: usize,
+    pub max_turns: u32,
     #[serde(default)]
     pub max_cost: Option<f64>,
     #[serde(default)]
@@ -574,7 +574,7 @@ impl ProviderConfigs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
@@ -586,7 +586,7 @@ pub struct AgentDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_turns: Option<usize>,
+    pub max_turns: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_cost: Option<f64>,
 }
@@ -1144,7 +1144,7 @@ fn default_summarization_min_turns() -> usize {
     6
 }
 
-fn default_max_turns() -> usize {
+fn default_max_turns() -> u32 {
     100
 }
 

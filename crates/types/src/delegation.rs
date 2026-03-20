@@ -26,6 +26,10 @@ pub struct DelegationRequest {
     pub max_turns: Option<u32>,
     #[serde(default)]
     pub max_cost: Option<f64>,
+    /// Parent's effective policy for inheritance. When present, child policy
+    /// will be narrowed from parent (strictest-wins semantics).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_policy: Option<crate::policy::EffectiveRunPolicy>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

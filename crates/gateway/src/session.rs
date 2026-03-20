@@ -4,7 +4,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, broadcast};
@@ -18,8 +18,6 @@ use crate::EVENT_BUFFER_CAPACITY;
 /// Each user has a set of sessions (keyed by session_id) and a counter
 /// tracking how many top-level turns are running concurrently.
 pub(crate) struct UserState {
-    #[allow(dead_code)]
-    pub(crate) user_id: String,
     pub(crate) sessions: RwLock<HashMap<String, Arc<SessionState>>>,
     /// Bounded top-level turn concurrency for this user.
     /// Subagent turns do NOT acquire permits (D11).
@@ -30,13 +28,8 @@ pub(crate) struct UserState {
 }
 
 impl UserState {
-    pub(crate) fn new(
-        user_id: String,
-        max_concurrent_turns: usize,
-        max_queued_turns: usize,
-    ) -> Self {
+    pub(crate) fn new(max_concurrent_turns: usize, max_queued_turns: usize) -> Self {
         Self {
-            user_id,
             sessions: RwLock::new(HashMap::new()),
             turn_semaphore: Arc::new(Semaphore::new(max_concurrent_turns)),
             queued_turns: AtomicUsize::new(0),
@@ -91,12 +84,13 @@ pub struct SessionState {
     pub(crate) parent_session_id: Option<String>,
     /// The channel that created this session (e.g. "tui", "telegram").
     pub(crate) channel_origin: String,
-    #[allow(dead_code)]
-    pub(crate) created_at: Instant,
     pub(crate) events: broadcast::Sender<GatewayServerFrame>,
     pub(crate) active_turn: Mutex<Option<ActiveTurnState>>,
     pub(crate) latest_terminal_frame: Mutex<Option<GatewayServerFrame>>,
     last_activity_epoch_secs: AtomicU64,
+    pub(crate) turn_count: AtomicUsize,
+    pub(crate) budget_remaining: Mutex<Option<u64>>,
+    pub(crate) stop_reason: Mutex<Option<types::policy::StopReason>>,
 }
 
 impl SessionState {
@@ -114,11 +108,13 @@ impl SessionState {
             agent_name,
             parent_session_id,
             channel_origin,
-            created_at: Instant::now(),
             events,
             active_turn: Mutex::new(None),
             latest_terminal_frame: Mutex::new(None),
             last_activity_epoch_secs: AtomicU64::new(epoch_now_secs()),
+            turn_count: AtomicUsize::new(0),
+            budget_remaining: Mutex::new(None),
+            stop_reason: Mutex::new(None),
         }
     }
 

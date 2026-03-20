@@ -152,6 +152,7 @@ impl Tool for DelegateToAgentTool {
             key_facts: request.key_facts.unwrap_or_default(),
             max_turns: request.max_turns,
             max_cost: request.max_cost,
+            parent_policy: context.policy.as_ref().map(|p| (**p).clone()),
         };
 
         // We cannot obtain the runtime cancellation token here; create a fresh one.
