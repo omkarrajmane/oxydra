@@ -24,7 +24,6 @@ fn calculate_delegation_depth(session_id: &str) -> usize {
 
 /// Narrow child policy from parent using strictest-wins semantics.
 ///
-/// Budget: min(parent_remaining, child_requested)
 /// Tools: intersection(parent_allowed, child_requested)
 /// Deadline: inherits parent remaining deadline
 fn narrow_child_policy(
@@ -32,21 +31,26 @@ fn narrow_child_policy(
     child_agent: &AgentDefinition,
     child_request: &DelegationRequest,
 ) -> EffectiveRunPolicy {
-    // Calculate narrowed budget: min(parent_remaining, child_requested)
-    let child_requested_budget = child_request
-        .max_cost
-        .map(|c| (c * 1_000_000.0) as u64) // Convert to micro-USD
-        .unwrap_or(parent_policy.remaining_budget_microusd);
-    let narrowed_budget = child_requested_budget.min(parent_policy.remaining_budget_microusd);
+    let child_agent_budget = child_agent.max_cost.map(|c| (c * 1_000_000.0) as u64);
+    let child_requested_budget = child_request.max_cost.map(|c| (c * 1_000_000.0) as u64);
+    let narrowed_budget = [
+        child_agent_budget,
+        child_requested_budget,
+        Some(parent_policy.remaining_budget_microusd),
+    ]
+    .into_iter()
+    .flatten()
+    .min()
+    .unwrap_or(parent_policy.remaining_budget_microusd);
 
-    // Calculate narrowed max_turns: min(parent_remaining, child_requested)
-    // For parent, we don't track remaining turns directly, so we use parent's max_turns if available
-    let narrowed_max_turns = match (parent_policy.max_turns, child_request.max_turns) {
-        (Some(parent), Some(child)) => Some(parent.min(child)),
-        (Some(parent), None) => Some(parent),
-        (None, Some(child)) => Some(child),
-        (None, None) => None,
-    };
+    let narrowed_max_turns = [
+        parent_policy.max_turns,
+        child_agent.max_turns,
+        child_request.max_turns,
+    ]
+    .into_iter()
+    .flatten()
+    .min();
 
     // Calculate tool intersection: parent_allowed ∩ child_requested
     let parent_tool_names: HashSet<String> = parent_policy
@@ -328,8 +332,10 @@ impl types::DelegationExecutor for RuntimeDelegationExecutor {
 
         // Use the policy-aware session method if we have a child policy
         let response = if let Some(policy) = child_policy {
-            // Create a channel for stream events (even though we don't use them for delegation)
-            let (stream_sender, _stream_receiver) = tokio::sync::mpsc::unbounded_channel();
+            // `run_session_for_session_with_policy` requires `UnboundedSender<StreamItem>`, so
+            // we drain the receiver in the background to avoid dead/unbounded queued events.
+            let (stream_sender, mut stream_receiver) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move { while stream_receiver.recv().await.is_some() {} });
             self.runtime
                 .run_session_for_session_with_policy(
                     &subagent_session_id,
@@ -583,6 +589,178 @@ mod tests {
 
         // Should be min(10, 5) = 5
         assert_eq!(child_policy.max_turns, Some(5));
+    }
+
+    #[test]
+    fn test_narrow_child_policy_agent_def_limit_without_request_limit() {
+        let parent_policy = EffectiveRunPolicy {
+            started_at: Utc::now(),
+            deadline: None,
+            initial_budget_microusd: 2_000_000,
+            remaining_budget_microusd: 2_000_000,
+            toolset: vec![],
+            auto_approve_tools: HashSet::new(),
+            disallowed_tools: HashSet::new(),
+            parent_run_id: None,
+            max_turns: Some(12),
+            rollout_mode: types::RolloutMode::Enforce,
+        };
+
+        let child_agent = AgentDefinition {
+            system_prompt: None,
+            system_prompt_file: None,
+            selection: None,
+            tools: None,
+            max_turns: Some(4),
+            max_cost: Some(0.75),
+        };
+
+        let request = DelegationRequest {
+            parent_session_id: "parent".to_string(),
+            parent_user_id: "user".to_string(),
+            agent_name: "child".to_string(),
+            goal: "test".to_string(),
+            caller_selection: None,
+            key_facts: vec![],
+            max_turns: None,
+            max_cost: None,
+            parent_policy: None,
+        };
+
+        let child_policy = narrow_child_policy(&parent_policy, &child_agent, &request);
+
+        assert_eq!(child_policy.initial_budget_microusd, 750_000);
+        assert_eq!(child_policy.remaining_budget_microusd, 750_000);
+        assert_eq!(child_policy.max_turns, Some(4));
+    }
+
+    #[test]
+    fn test_narrow_child_policy_min_of_three_when_both_set_limits() {
+        let parent_policy = EffectiveRunPolicy {
+            started_at: Utc::now(),
+            deadline: None,
+            initial_budget_microusd: 3_000_000,
+            remaining_budget_microusd: 3_000_000,
+            toolset: vec![],
+            auto_approve_tools: HashSet::new(),
+            disallowed_tools: HashSet::new(),
+            parent_run_id: None,
+            max_turns: Some(8),
+            rollout_mode: types::RolloutMode::Enforce,
+        };
+
+        let child_agent = AgentDefinition {
+            system_prompt: None,
+            system_prompt_file: None,
+            selection: None,
+            tools: None,
+            max_turns: Some(5),
+            max_cost: Some(1.8),
+        };
+
+        let request = DelegationRequest {
+            parent_session_id: "parent".to_string(),
+            parent_user_id: "user".to_string(),
+            agent_name: "child".to_string(),
+            goal: "test".to_string(),
+            caller_selection: None,
+            key_facts: vec![],
+            max_turns: Some(3),
+            max_cost: Some(1.2),
+            parent_policy: None,
+        };
+
+        let child_policy = narrow_child_policy(&parent_policy, &child_agent, &request);
+
+        assert_eq!(child_policy.initial_budget_microusd, 1_200_000);
+        assert_eq!(child_policy.remaining_budget_microusd, 1_200_000);
+        assert_eq!(child_policy.max_turns, Some(3));
+    }
+
+    #[test]
+    fn test_narrow_child_policy_parent_applies_when_agent_and_request_unset() {
+        let parent_policy = EffectiveRunPolicy {
+            started_at: Utc::now(),
+            deadline: None,
+            initial_budget_microusd: 900_000,
+            remaining_budget_microusd: 650_000,
+            toolset: vec![],
+            auto_approve_tools: HashSet::new(),
+            disallowed_tools: HashSet::new(),
+            parent_run_id: None,
+            max_turns: Some(7),
+            rollout_mode: types::RolloutMode::Enforce,
+        };
+
+        let child_agent = AgentDefinition {
+            system_prompt: None,
+            system_prompt_file: None,
+            selection: None,
+            tools: None,
+            max_turns: None,
+            max_cost: None,
+        };
+
+        let request = DelegationRequest {
+            parent_session_id: "parent".to_string(),
+            parent_user_id: "user".to_string(),
+            agent_name: "child".to_string(),
+            goal: "test".to_string(),
+            caller_selection: None,
+            key_facts: vec![],
+            max_turns: None,
+            max_cost: None,
+            parent_policy: None,
+        };
+
+        let child_policy = narrow_child_policy(&parent_policy, &child_agent, &request);
+
+        assert_eq!(child_policy.initial_budget_microusd, 650_000);
+        assert_eq!(child_policy.remaining_budget_microusd, 650_000);
+        assert_eq!(child_policy.max_turns, Some(7));
+    }
+
+    #[test]
+    fn test_narrow_child_policy_agent_def_wins_when_request_exceeds_limit() {
+        let parent_policy = EffectiveRunPolicy {
+            started_at: Utc::now(),
+            deadline: None,
+            initial_budget_microusd: 5_000_000,
+            remaining_budget_microusd: 5_000_000,
+            toolset: vec![],
+            auto_approve_tools: HashSet::new(),
+            disallowed_tools: HashSet::new(),
+            parent_run_id: None,
+            max_turns: Some(10),
+            rollout_mode: types::RolloutMode::Enforce,
+        };
+
+        let child_agent = AgentDefinition {
+            system_prompt: None,
+            system_prompt_file: None,
+            selection: None,
+            tools: None,
+            max_turns: Some(2),
+            max_cost: Some(0.4),
+        };
+
+        let request = DelegationRequest {
+            parent_session_id: "parent".to_string(),
+            parent_user_id: "user".to_string(),
+            agent_name: "child".to_string(),
+            goal: "test".to_string(),
+            caller_selection: None,
+            key_facts: vec![],
+            max_turns: Some(9),
+            max_cost: Some(2.5),
+            parent_policy: None,
+        };
+
+        let child_policy = narrow_child_policy(&parent_policy, &child_agent, &request);
+
+        assert_eq!(child_policy.initial_budget_microusd, 400_000);
+        assert_eq!(child_policy.remaining_budget_microusd, 400_000);
+        assert_eq!(child_policy.max_turns, Some(2));
     }
 
     #[test]

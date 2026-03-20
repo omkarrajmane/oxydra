@@ -215,6 +215,7 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
             channel_id,
             channel_context_id,
             inbound_attachments,
+            cancellation_token: Some(cancellation.clone()),
             ..Default::default()
         };
 
@@ -408,6 +409,7 @@ impl ScheduledTurnRunner for RuntimeGatewayTurnRunner {
             channel_id: origin.channel_id.clone(),
             channel_context_id: origin.channel_context_id.clone(),
             inbound_attachments: None,
+            cancellation_token: Some(cancellation.clone()),
             ..Default::default()
         };
 

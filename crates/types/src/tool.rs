@@ -103,6 +103,7 @@ pub struct ToolExecutionContext {
     pub turn: Option<u32>,
     /// The remaining budget for the current run.
     pub remaining_budget: Option<u64>,
+    pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl std::fmt::Debug for ToolExecutionContext {

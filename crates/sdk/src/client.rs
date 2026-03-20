@@ -76,7 +76,10 @@ impl OxydraClient {
     ) -> Result<RunResult, ClientError> {
         let prompt = prompt.into();
         let cancellation = CancellationToken::new();
-        let (delta_sender, _delta_receiver) = mpsc::unbounded_channel::<StreamItem>();
+        let (delta_sender, mut delta_receiver) = mpsc::unbounded_channel::<StreamItem>();
+        // `run_turn` requires `UnboundedSender<StreamItem>`, so we cannot switch to a bounded
+        // channel here. Drain in the background to avoid a dead receiver and unbounded buildup.
+        tokio::spawn(async move { while delta_receiver.recv().await.is_some() {} });
 
         // Create or get session
         let session = self
@@ -322,7 +325,7 @@ impl OxydraClient {
                             InternalRunEvent::Error(e) => {
                                 let _ = run_event_sender.send(RunEvent::PolicyStop {
                                     reason: e.clone(),
-                                    stop_reason: StopReason::Cancelled,
+                                    stop_reason: Self::classify_stream_error(&e),
                                 });
                                 break;
                             }
@@ -338,8 +341,26 @@ impl OxydraClient {
         Ok(RunEventStream::new(stream))
     }
 
+    fn classify_stream_error(error: &str) -> StopReason {
+        let lower = error.to_lowercase();
+
+        if lower.contains("cancelled") {
+            StopReason::Cancelled
+        } else if lower.contains("budget") {
+            StopReason::MaxBudgetExceeded
+        } else if lower.contains("deadline") || lower.contains("timeout") {
+            StopReason::MaxRuntimeExceeded
+        } else {
+            StopReason::Error(error.to_string())
+        }
+    }
+
+    /// Determines stop reason for one-shot runs.
+    ///
+    /// One-shot responses currently only expose `finish_reason`, so this path
+    /// cannot reliably infer richer policy stop reasons (budget/runtime/cancelled).
+    /// TODO: Use `_policy` once one-shot responses include structured stop metadata.
     fn determine_stop_reason(response: &Response, _policy: Option<&RunPolicyInput>) -> StopReason {
-        // Determine stop reason based on response and policy
         if response.finish_reason.as_deref() == Some("max_tokens") {
             StopReason::MaxTurns
         } else {
@@ -476,6 +497,25 @@ mod tests {
 
         let stop_reason = OxydraClient::determine_stop_reason(&response, None);
         assert_eq!(stop_reason, StopReason::MaxTurns);
+    }
+
+    #[test]
+    fn test_stream_error_budget_maps_correctly() {
+        let stop_reason = OxydraClient::classify_stream_error("Budget exceeded while running turn");
+        assert_eq!(stop_reason, StopReason::MaxBudgetExceeded);
+    }
+
+    #[test]
+    fn test_stream_error_cancelled_maps_correctly() {
+        let stop_reason = OxydraClient::classify_stream_error("Operation Cancelled by user");
+        assert_eq!(stop_reason, StopReason::Cancelled);
+    }
+
+    #[test]
+    fn test_stream_error_generic_maps_to_error() {
+        let error = "provider failed with unknown issue";
+        let stop_reason = OxydraClient::classify_stream_error(error);
+        assert_eq!(stop_reason, StopReason::Error(error.to_string()));
     }
 
     // Control plane method tests

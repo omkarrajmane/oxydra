@@ -5,13 +5,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tools::ToolRegistry;
 use types::{
-    Context, EffectiveRunPolicy, Memory, MemoryError, MemoryHybridQueryRequest,
-    MemoryRecallRequest, MemoryRetrieval, MemoryStoreRequest, MemorySummaryReadRequest,
-    MemorySummaryState, MemorySummaryWriteRequest, Message, MessageRole, PolicyStreamEvent,
-    Provider, ProviderError, ProviderId, ProviderSelection, Response, RolloutMode, RuntimeError,
-    RuntimeProgressEvent, RuntimeProgressKind, SafetyTier, StopReason, StreamItem, ToolCall,
-    ToolCallDelta, ToolError, ToolExecutionContext, UsageUpdate,
-    ChannelCapabilities, MediaAttachment,
+    ChannelCapabilities, Context, EffectiveRunPolicy, MediaAttachment, Memory, MemoryError,
+    MemoryHybridQueryRequest, MemoryRecallRequest, MemoryRetrieval, MemoryStoreRequest,
+    MemorySummaryReadRequest, MemorySummaryState, MemorySummaryWriteRequest, Message, MessageRole,
+    PolicyStreamEvent, Provider, ProviderError, ProviderId, ProviderSelection, Response,
+    RolloutMode, RuntimeError, RuntimeProgressEvent, RuntimeProgressKind, SafetyTier, StopReason,
+    StreamItem, ToolCall, ToolCallDelta, ToolError, ToolExecutionContext, UsageUpdate,
 };
 
 const DEFAULT_STREAM_BUFFER_SIZE: usize = 64;
@@ -315,6 +314,7 @@ impl AgentRuntime {
             channel_id: None,
             channel_context_id: None,
             inbound_attachments: None,
+            cancellation_token: Some(cancellation.clone()),
             ..Default::default()
         };
         self.run_session_for_session_with_tool_context(

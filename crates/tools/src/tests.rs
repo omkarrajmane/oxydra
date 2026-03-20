@@ -850,6 +850,7 @@ mod memory_tool_tests {
             permission_handler: None,
             turn: None,
             remaining_budget: None,
+            cancellation_token: None,
         }
     }
 

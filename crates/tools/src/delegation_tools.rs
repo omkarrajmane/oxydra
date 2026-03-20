@@ -1,13 +1,11 @@
 use std::collections::BTreeMap;
 
-use async_trait::async_trait;
-use serde::Deserialize;
-use serde_json::json;
-use tokio_util::sync::CancellationToken;
-
 use crate::{
     FunctionDecl, SafetyTier, Tool, ToolError, ToolExecutionContext, execution_failed, parse_args,
 };
+use async_trait::async_trait;
+use serde::Deserialize;
+use serde_json::json;
 use types::{
     AgentDefinition, DelegationRequest, MediaAttachment, MediaType, ProviderSelection, StreamItem,
 };
@@ -155,8 +153,11 @@ impl Tool for DelegateToAgentTool {
             parent_policy: context.policy.as_ref().map(|p| (**p).clone()),
         };
 
-        // We cannot obtain the runtime cancellation token here; create a fresh one.
-        let cancellation = CancellationToken::new();
+        let cancellation = context
+            .cancellation_token
+            .as_ref()
+            .map(|parent| parent.child_token())
+            .unwrap_or_default();
 
         let result = executor
             .delegate(del_req, &cancellation, None)
@@ -214,4 +215,94 @@ pub fn register_delegation_tools(
         DELEGATE_TO_AGENT_TOOL_NAME,
         DelegateToAgentTool::new(agents),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use async_trait::async_trait;
+    use tokio_util::sync::CancellationToken;
+    use types::{
+        AgentDefinition, DelegationRequest, DelegationResult, DelegationStatus, RuntimeError,
+        set_global_delegation_executor,
+    };
+
+    use crate::{Tool, ToolExecutionContext};
+
+    use super::DelegateToAgentTool;
+
+    struct CancellationProbeExecutor {
+        observed_parent_cancellation: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl types::DelegationExecutor for CancellationProbeExecutor {
+        async fn delegate(
+            &self,
+            _request: DelegationRequest,
+            parent_cancellation: &CancellationToken,
+            _progress_sender: Option<types::DelegationProgressSender>,
+        ) -> Result<DelegationResult, RuntimeError> {
+            parent_cancellation.cancelled().await;
+            self.observed_parent_cancellation
+                .store(true, Ordering::SeqCst);
+            Ok(DelegationResult {
+                output: "cancelled".to_owned(),
+                attachments: Vec::new(),
+                turns_used: 1,
+                cost_used: 0.0,
+                status: DelegationStatus::Completed,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn delegate_to_agent_uses_child_token_of_parent_context_cancellation() {
+        let observed_parent_cancellation = Arc::new(AtomicBool::new(false));
+        let _ = set_global_delegation_executor(Arc::new(CancellationProbeExecutor {
+            observed_parent_cancellation: Arc::clone(&observed_parent_cancellation),
+        }));
+
+        let mut agents = BTreeMap::new();
+        agents.insert(
+            "specialist".to_owned(),
+            AgentDefinition {
+                system_prompt: Some("specialist".to_owned()),
+                system_prompt_file: None,
+                selection: None,
+                tools: None,
+                max_turns: None,
+                max_cost: None,
+            },
+        );
+        let tool = DelegateToAgentTool::new(&agents);
+        let parent = CancellationToken::new();
+        let args = r#"{"agent_name":"specialist","goal":"test cancellation"}"#;
+
+        let context = ToolExecutionContext {
+            user_id: Some("alice".to_owned()),
+            session_id: Some("session-1".to_owned()),
+            cancellation_token: Some(parent.clone()),
+            ..Default::default()
+        };
+
+        let execute = tool.execute(args, &context);
+        tokio::pin!(execute);
+
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        parent.cancel();
+
+        let result = execute.await;
+        assert!(
+            result.is_ok(),
+            "delegation should complete after cancellation"
+        );
+        assert!(
+            observed_parent_cancellation.load(Ordering::SeqCst),
+            "delegate executor should observe cancellation on child token"
+        );
+    }
 }
