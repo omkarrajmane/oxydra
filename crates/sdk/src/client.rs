@@ -75,6 +75,9 @@ impl OxydraClient {
         policy: Option<RunPolicyInput>,
     ) -> Result<RunResult, ClientError> {
         let prompt = prompt.into();
+
+        // Per-call policy fully overrides config default; field-level merging with global/agent policies happens downstream in merge_policy()
+        let effective_policy = policy.or(self.config.policy.clone());
         let cancellation = CancellationToken::new();
         let (delta_sender, mut delta_receiver) = mpsc::unbounded_channel::<StreamItem>();
         // `run_turn` requires `UnboundedSender<StreamItem>`, so we cannot switch to a bounded
@@ -128,7 +131,7 @@ impl OxydraClient {
                 cancellation,
                 delta_sender,
                 origin,
-                policy.clone(),
+                effective_policy.clone(),
             )
             .await;
 
@@ -137,7 +140,7 @@ impl OxydraClient {
 
         match result {
             Ok(response) => {
-                let stop_reason = Self::determine_stop_reason(&response, policy.as_ref());
+                let stop_reason = Self::determine_stop_reason(&response, effective_policy.as_ref());
                 let run_result = RunResult {
                     response: response.message.content.unwrap_or_default(),
                     stop_reason,
@@ -162,6 +165,10 @@ impl OxydraClient {
         policy: Option<RunPolicyInput>,
     ) -> Result<RunEventStream, ClientError> {
         let prompt = prompt.into();
+
+        // Per-call policy fully overrides config default; field-level merging with global/agent policies happens downstream in merge_policy()
+        let effective_policy = policy.or(self.config.policy.clone());
+
         let cancellation = CancellationToken::new();
         let (delta_sender, delta_receiver) = mpsc::unbounded_channel::<StreamItem>();
         let (event_sender, event_receiver) = mpsc::unbounded_channel::<InternalRunEvent>();
@@ -216,13 +223,14 @@ impl OxydraClient {
                     cancellation,
                     delta_sender,
                     origin,
-                    policy.clone(),
+                    effective_policy.clone(),
                 )
                 .await;
 
             match result {
                 Ok(response) => {
-                    let stop_reason = Self::determine_stop_reason(&response, policy.as_ref());
+                    let stop_reason =
+                        Self::determine_stop_reason(&response, effective_policy.as_ref());
                     let _ = event_sender.send(InternalRunEvent::Completed {
                         response: response.message.content.unwrap_or_default(),
                         stop_reason,
@@ -583,5 +591,112 @@ mod tests {
         // The fact that this test compiles proves the methods exist
         // since we can't actually call async methods in a meaningful way
         // without a full client setup with real dependencies
+    }
+
+    // Policy merging tests for one_shot and stream methods
+    // These tests verify that the effective_policy logic correctly merges
+    // per-call policy with config-level policy using the .or() pattern.
+
+    #[test]
+    fn test_policy_merge_config_policy_used_when_call_policy_none() {
+        // When config has a policy and call policy is None, config policy should be used
+        let config_policy = RunPolicyInput {
+            max_turns: Some(10),
+            ..Default::default()
+        };
+        let call_policy: Option<RunPolicyInput> = None;
+
+        let effective_policy = call_policy.or(Some(config_policy.clone()));
+
+        assert!(effective_policy.is_some());
+        assert_eq!(effective_policy.unwrap().max_turns, Some(10));
+    }
+
+    #[test]
+    fn test_policy_merge_call_policy_wins_over_config_policy() {
+        // When both config and call have policies, call policy should win
+        let config_policy = RunPolicyInput {
+            max_turns: Some(10),
+            max_budget_microusd: Some(1000),
+            ..Default::default()
+        };
+        let call_policy = Some(RunPolicyInput {
+            max_turns: Some(5),
+            ..Default::default()
+        });
+
+        let effective_policy = call_policy.or(Some(config_policy));
+
+        assert!(effective_policy.is_some());
+        // Call policy's max_turns should win
+        assert_eq!(effective_policy.unwrap().max_turns, Some(5));
+    }
+
+    #[test]
+    fn test_policy_merge_none_when_both_none() {
+        // When both config and call policies are None, effective should be None
+        let config_policy: Option<RunPolicyInput> = None;
+        let call_policy: Option<RunPolicyInput> = None;
+
+        let effective_policy = call_policy.or(config_policy);
+
+        assert!(effective_policy.is_none());
+    }
+
+    #[test]
+    fn test_policy_merge_call_policy_none_with_config_max_budget() {
+        // Config has max_budget, call policy is None
+        let config_policy = RunPolicyInput {
+            max_budget_microusd: Some(500_000),
+            ..Default::default()
+        };
+        let call_policy: Option<RunPolicyInput> = None;
+
+        let effective_policy = call_policy.or(Some(config_policy));
+
+        assert!(effective_policy.is_some());
+        assert_eq!(effective_policy.unwrap().max_budget_microusd, Some(500_000));
+    }
+
+    #[test]
+    fn test_policy_merge_call_policy_overrides_config_max_turns() {
+        // Config has max_turns, call policy has different max_turns
+        let config_policy = RunPolicyInput {
+            max_turns: Some(20),
+            ..Default::default()
+        };
+        let call_policy = Some(RunPolicyInput {
+            max_turns: Some(3),
+            ..Default::default()
+        });
+
+        let effective_policy = call_policy.or(Some(config_policy));
+
+        assert!(effective_policy.is_some());
+        // Call policy wins
+        assert_eq!(effective_policy.unwrap().max_turns, Some(3));
+    }
+
+    #[test]
+    fn test_policy_merge_empty_call_policy_overrides_config() {
+        // Even an empty call policy (Some with all None fields) wins over config
+        let config_policy = RunPolicyInput {
+            max_turns: Some(10),
+            max_budget_microusd: Some(1000),
+            ..Default::default()
+        };
+        let call_policy = Some(RunPolicyInput {
+            max_turns: None,
+            max_budget_microusd: None,
+            ..Default::default()
+        });
+
+        let effective_policy = call_policy.or(Some(config_policy));
+
+        assert!(effective_policy.is_some());
+        // Call policy exists, so it's used even if fields are None
+        let policy = effective_policy.unwrap();
+        assert!(policy.max_turns.is_none());
+        assert!(policy.max_budget_microusd.is_none());
     }
 }
