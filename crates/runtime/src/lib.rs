@@ -5,12 +5,13 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tools::ToolRegistry;
 use types::{
-    ChannelCapabilities, Context, EffectiveRunPolicy, MediaAttachment, Memory, MemoryError,
-    MemoryHybridQueryRequest, MemoryRecallRequest, MemoryRetrieval, MemoryStoreRequest,
-    MemorySummaryReadRequest, MemorySummaryState, MemorySummaryWriteRequest, Message, MessageRole,
-    PolicyStreamEvent, Provider, ProviderError, ProviderId, ProviderSelection, Response,
-    RolloutMode, RuntimeError, RuntimeProgressEvent, RuntimeProgressKind, SafetyTier, StopReason,
-    StreamItem, ToolCall, ToolCallDelta, ToolError, ToolExecutionContext, UsageUpdate,
+    ChannelCapabilities, Context, EffectiveRunPolicy, FunctionDecl, MediaAttachment, Memory,
+    MemoryError, MemoryHybridQueryRequest, MemoryRecallRequest, MemoryRetrieval,
+    MemoryStoreRequest, MemorySummaryReadRequest, MemorySummaryState, MemorySummaryWriteRequest,
+    Message, MessageRole, PolicyStreamEvent, Provider, ProviderError, ProviderId,
+    ProviderSelection, Response, RolloutMode, RuntimeError, RuntimeProgressEvent,
+    RuntimeProgressKind, SafetyTier, StopReason, StreamItem, ToolCall, ToolCallDelta, ToolError,
+    ToolExecutionContext, UsageUpdate,
 };
 
 const DEFAULT_STREAM_BUFFER_SIZE: usize = 64;
@@ -73,6 +74,9 @@ pub trait ScheduledTurnRunner: Send + Sync {
         cancellation: CancellationToken,
         policy: Option<EffectiveRunPolicy>,
     ) -> Result<(String, Vec<MediaAttachment>), RuntimeError>;
+
+    /// Return the available tool schemas for policy resolution.
+    fn tool_schemas(&self) -> Vec<FunctionDecl>;
 }
 
 #[cfg(test)]

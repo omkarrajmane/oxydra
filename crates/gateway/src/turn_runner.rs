@@ -4,8 +4,8 @@ use super::*;
 use runtime::ScheduledTurnRunner;
 use runtime::policy_guard::{PolicyValidationError, resolve_policy};
 use types::{
-    AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, InlineMedia, MediaAttachment,
-    ProviderError, ProviderId, ProviderSelection, RunPolicyInput,
+    AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, FunctionDecl, InlineMedia,
+    MediaAttachment, ProviderError, ProviderId, ProviderSelection, RunPolicyInput,
 };
 
 /// User-submitted content for a single turn (text + optional media).
@@ -456,6 +456,10 @@ impl ScheduledTurnRunner for RuntimeGatewayTurnRunner {
         }
 
         Ok((response.message.content.unwrap_or_default(), media))
+    }
+
+    fn tool_schemas(&self) -> Vec<FunctionDecl> {
+        self.runtime.tool_schemas()
     }
 }
 

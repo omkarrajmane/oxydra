@@ -8,7 +8,7 @@ use memory_crate::cadence::next_run_for_cadence;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 use types::{
-    AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, FunctionDecl, GatewayMediaAttachment,
+    AgentDefinition, ChannelCapabilities, EffectiveRunPolicy, GatewayMediaAttachment,
     GatewayScheduledNotification, GatewayServerFrame, GatewaySession, MediaAttachment,
     NotificationPolicy, RunPolicyInput, RuntimeConfig, ScheduleCadence, ScheduleDefinition,
     ScheduleRunRecord, ScheduleRunStatus, ScheduleStatus, SchedulerConfig,
@@ -407,9 +407,7 @@ impl SchedulerExecutor {
             max_cost: None,
         };
 
-        // Get available tools from turn_runner if possible
-        // For now, use empty tool list - the runtime will provide actual tools
-        let available_tools: Vec<FunctionDecl> = Vec::new();
+        let available_tools = self.turn_runner.tool_schemas();
 
         // Merge schedule policy with SchedulerConfig using strictest-wins
         let merged_per_run =

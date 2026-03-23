@@ -3737,7 +3737,7 @@ mod scheduler_executor_tests {
     use tokio::sync::Mutex;
     use tokio_util::sync::CancellationToken;
     use types::{
-        ChannelCapabilities, EffectiveRunPolicy, GatewayServerFrame, MediaAttachment,
+        ChannelCapabilities, EffectiveRunPolicy, FunctionDecl, GatewayServerFrame, MediaAttachment,
         NotificationPolicy, RuntimeError, ScheduleCadence, ScheduleDefinition, ScheduleRunRecord,
         ScheduleRunStatus, ScheduleSearchFilters, ScheduleSearchResult, ScheduleStatus,
         SchedulerConfig, SchedulerError,
@@ -3779,6 +3779,10 @@ mod scheduler_executor_tests {
                 responses.remove(0)?
             };
             Ok((text, Vec::new()))
+        }
+
+        fn tool_schemas(&self) -> Vec<FunctionDecl> {
+            Vec::new()
         }
     }
 
