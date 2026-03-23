@@ -150,6 +150,10 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         version: "0025_add_delivery_streak_to_schedules",
         sql: include_str!("../migrations/0025_add_delivery_streak_to_schedules.sql"),
     },
+    Migration {
+        version: "0026_add_policy_to_schedules",
+        sql: include_str!("../migrations/0026_add_policy_to_schedules.sql"),
+    },
 ];
 
 pub(crate) async fn rollback_quietly(conn: &Connection) {

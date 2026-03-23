@@ -66,6 +66,11 @@ impl SchedulerStore for LibsqlSchedulerStore {
         let notification = notification_policy_to_str(def.notification_policy);
         let status = schedule_status_to_str(def.status);
         let last_run_status = def.last_run_status.map(run_status_to_str);
+        let policy_json = def
+            .policy
+            .as_ref()
+            .map(|p| serde_json::to_string(p).map_err(|e| store_error(e.to_string())))
+            .transpose()?;
 
         self.conn
             .execute(
@@ -73,8 +78,8 @@ impl SchedulerStore for LibsqlSchedulerStore {
                     schedule_id, user_id, name, goal, cadence_json,
                     notification_policy, status, created_at, updated_at,
                     next_run_at, last_run_at, last_run_status, consecutive_failures,
-                    channel_id, channel_context_id
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                    channel_id, channel_context_id, policy_json
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     def.schedule_id.as_str(),
                     def.user_id.as_str(),
@@ -90,7 +95,8 @@ impl SchedulerStore for LibsqlSchedulerStore {
                     last_run_status,
                     def.consecutive_failures,
                     def.channel_id.as_deref(),
-                    def.channel_context_id.as_deref()
+                    def.channel_context_id.as_deref(),
+                    policy_json
                 ],
             )
             .await
@@ -106,7 +112,7 @@ impl SchedulerStore for LibsqlSchedulerStore {
                 "SELECT schedule_id, user_id, name, goal, cadence_json,
                         notification_policy, status, created_at, updated_at,
                         next_run_at, last_run_at, last_run_status, consecutive_failures,
-                        channel_id, channel_context_id
+                        channel_id, channel_context_id, policy_json
                  FROM schedules WHERE schedule_id = ?1",
                 params![schedule_id],
             )
@@ -190,7 +196,7 @@ impl SchedulerStore for LibsqlSchedulerStore {
             "SELECT schedule_id, user_id, name, goal, cadence_json,
                     notification_policy, status, created_at, updated_at,
                     next_run_at, last_run_at, last_run_status, consecutive_failures,
-                    channel_id, channel_context_id
+                    channel_id, channel_context_id, policy_json
              FROM schedules WHERE {where_sql}
              ORDER BY created_at DESC
              LIMIT ?{limit_param} OFFSET ?{offset_param}"
@@ -345,7 +351,7 @@ impl SchedulerStore for LibsqlSchedulerStore {
                 "SELECT schedule_id, user_id, name, goal, cadence_json,
                         notification_policy, status, created_at, updated_at,
                         next_run_at, last_run_at, last_run_status, consecutive_failures,
-                        channel_id, channel_context_id
+                        channel_id, channel_context_id, policy_json
                  FROM schedules
                  WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ?1
                  ORDER BY next_run_at ASC
@@ -668,6 +674,7 @@ fn schedule_from_row(row: &libsql::Row) -> Result<ScheduleDefinition, SchedulerE
     let consecutive_failures: i64 = row.get(12).map_err(|e| store_error(e.to_string()))?;
     let channel_id: Option<String> = row.get(13).map_err(|e| store_error(e.to_string()))?;
     let channel_context_id: Option<String> = row.get(14).map_err(|e| store_error(e.to_string()))?;
+    let policy_json: Option<String> = row.get(15).map_err(|e| store_error(e.to_string()))?;
 
     let cadence: ScheduleCadence =
         serde_json::from_str(&cadence_json).map_err(|e| store_error(e.to_string()))?;
@@ -677,6 +684,10 @@ fn schedule_from_row(row: &libsql::Row) -> Result<ScheduleDefinition, SchedulerE
         .as_deref()
         .map(run_status_from_str)
         .transpose()?;
+    let policy: Option<types::RunPolicyInput> = policy_json
+        .map(|j| serde_json::from_str(&j))
+        .transpose()
+        .map_err(|e| store_error(format!("failed to deserialize policy_json: {e}")))?;
 
     Ok(ScheduleDefinition {
         schedule_id,
@@ -694,7 +705,7 @@ fn schedule_from_row(row: &libsql::Row) -> Result<ScheduleDefinition, SchedulerE
         consecutive_failures: consecutive_failures as u32,
         channel_id,
         channel_context_id,
-        policy: None,
+        policy,
     })
 }
 
@@ -811,6 +822,11 @@ mod tests {
         ))
         .await
         .expect("migration 0025");
+        conn.execute_batch(include_str!(
+            "../migrations/0026_add_policy_to_schedules.sql"
+        ))
+        .await
+        .expect("migration 0026");
 
         LibsqlSchedulerStore::new(conn)
     }
@@ -1140,4 +1156,152 @@ mod tests {
         let streak: u32 = row.get(0).expect("get");
         assert_eq!(streak, 0);
     }
+
+    // -----------------------------------------------------------------------
+    // Schedule policy persistence tests
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal schedule definition with optional policy.
+    fn test_schedule_def(
+        schedule_id: &str,
+        policy: Option<types::RunPolicyInput>,
+    ) -> ScheduleDefinition {
+        ScheduleDefinition {
+            schedule_id: schedule_id.to_owned(),
+            user_id: "user-1".to_owned(),
+            name: Some("Test Schedule".to_owned()),
+            goal: "Test goal".to_owned(),
+            cadence: ScheduleCadence::Once {
+                at: "2026-01-01T00:00:00Z".to_owned(),
+            },
+            notification_policy: NotificationPolicy::Always,
+            status: ScheduleStatus::Active,
+            created_at: "2026-01-01T00:00:00Z".to_owned(),
+            updated_at: "2026-01-01T00:00:00Z".to_owned(),
+            next_run_at: None,
+            last_run_at: None,
+            last_run_status: None,
+            consecutive_failures: 0,
+            channel_id: Some("telegram".to_owned()),
+            channel_context_id: Some("-100:42".to_owned()),
+            policy,
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_roundtrip_with_value() {
+        let store = test_store().await;
+
+        // Create a policy with all fields populated
+        let policy = types::RunPolicyInput {
+            max_runtime: Some(std::time::Duration::from_secs(300)),
+            max_budget_microusd: Some(1_000_000),
+            max_turns: Some(50),
+            tool_policy: Some(types::ToolPolicyInput {
+                toolset: Some(vec!["read_file".to_owned(), "write_file".to_owned()]),
+                auto_approve_tools: Some(vec!["read_file".to_owned()]),
+                disallowed_tools: Some(vec!["shell".to_owned()]),
+            }),
+        };
+
+        let def = test_schedule_def("s-policy-test", Some(policy.clone()));
+        store.create_schedule(&def).await.expect("create schedule");
+
+        // Read it back
+        let retrieved = store
+            .get_schedule("s-policy-test")
+            .await
+            .expect("get schedule");
+
+        // Policy should match
+        assert!(retrieved.policy.is_some());
+        let retrieved_policy = retrieved.policy.unwrap();
+        assert_eq!(retrieved_policy.max_runtime, policy.max_runtime);
+        assert_eq!(
+            retrieved_policy.max_budget_microusd,
+            policy.max_budget_microusd
+        );
+        assert_eq!(retrieved_policy.max_turns, policy.max_turns);
+        assert!(retrieved_policy.tool_policy.is_some());
+    }
+
+    #[tokio::test]
+    async fn policy_roundtrip_without_value() {
+        let store = test_store().await;
+
+        // Create schedule without policy
+        let def = test_schedule_def("s-no-policy", None);
+        store.create_schedule(&def).await.expect("create schedule");
+
+        // Read it back
+        let retrieved = store
+            .get_schedule("s-no-policy")
+            .await
+            .expect("get schedule");
+
+        // Policy should be None
+        assert!(retrieved.policy.is_none());
+    }
+
+    #[tokio::test]
+    async fn policy_persisted_via_search_schedules() {
+        let store = test_store().await;
+
+        let policy = types::RunPolicyInput {
+            max_runtime: Some(std::time::Duration::from_secs(600)),
+            max_budget_microusd: Some(5_000_000),
+            max_turns: Some(100),
+            tool_policy: None,
+        };
+
+        let def = test_schedule_def("s-search-test", Some(policy));
+        store.create_schedule(&def).await.expect("create schedule");
+
+        // Search for the schedule
+        let result = store
+            .search_schedules(
+                "user-1",
+                &ScheduleSearchFilters {
+                    limit: 10,
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("search schedules");
+
+        assert_eq!(result.schedules.len(), 1);
+        assert!(result.schedules[0].policy.is_some());
+        let retrieved_policy = result.schedules[0].policy.as_ref().unwrap();
+        assert_eq!(retrieved_policy.max_turns, Some(100));
+    }
+
+    #[tokio::test]
+    async fn policy_persisted_via_due_schedules() {
+        let store = test_store().await;
+
+        let policy = types::RunPolicyInput {
+            max_runtime: Some(std::time::Duration::from_secs(120)),
+            max_budget_microusd: Some(500_000),
+            max_turns: Some(25),
+            tool_policy: None,
+        };
+
+        // Create schedule with past next_run_at so it shows up in due_schedules
+        let mut def = test_schedule_def("s-due-test", Some(policy));
+        def.next_run_at = Some("2020-01-01T00:00:00Z".to_owned()); // Past date
+        store.create_schedule(&def).await.expect("create schedule");
+
+        // Query due schedules
+        let due = store
+            .due_schedules("2025-01-01T00:00:00Z", 10)
+            .await
+            .expect("due schedules");
+
+        assert_eq!(due.len(), 1);
+        assert!(due[0].policy.is_some());
+        let retrieved_policy = due[0].policy.as_ref().unwrap();
+        assert_eq!(retrieved_policy.max_turns, Some(25));
+    }
+
+    // TODO: SchedulePatch and schedule_edit tool do not support updating policy — set at creation only
 }
