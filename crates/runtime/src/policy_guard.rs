@@ -662,4 +662,33 @@ mod tests {
         assert!(result.is_err(), "Past deadline should be rejected");
         assert_eq!(result.unwrap_err(), PolicyValidationError::PastDeadline);
     }
+
+    #[test]
+    fn test_unlimited_budget_none_preserves_tool_policy() {
+        // Regression: schedule_create used to store Some(0) for unlimited-budget runs.
+        // policy_guard rejects Some(0) as ZeroBudget, causing tool_policy to be dropped.
+        // Fix: map initial_budget_microusd == 0 → None before storing.
+        // This test verifies that None budget (unlimited) succeeds and preserves tool restrictions.
+        let global = create_runtime_config(50, None, 30);
+        let agent = create_agent_definition(None, None, None);
+        let tool_policy = create_tool_policy_input(
+            Some(vec!["tool_a".to_string(), "tool_b".to_string()]),
+            None,
+            Some(vec!["tool_a".to_string()]),
+        );
+        let per_run = create_run_policy_input(None, None, None, Some(tool_policy));
+        let available = create_available_tools();
+
+        let result = resolve_policy(&global, &agent, &per_run, &available);
+
+        assert!(
+            result.is_ok(),
+            "None budget (unlimited) with tool policy should be accepted, got: {:?}",
+            result.unwrap_err()
+        );
+        let policy = result.unwrap();
+        assert_eq!(policy.initial_budget_microusd, 0, "Unlimited budget should be 0");
+        assert_eq!(policy.toolset.len(), 2, "Tool restrictions should be preserved");
+        assert!(policy.auto_approve_tools.contains("tool_a"), "Auto-approve tools should be preserved");
+    }
 }

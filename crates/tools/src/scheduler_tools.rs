@@ -277,7 +277,11 @@ impl Tool for ScheduleCreateTool {
 
             types::RunPolicyInput {
                 max_runtime,
-                max_budget_microusd: Some(p.initial_budget_microusd),
+                max_budget_microusd: if p.initial_budget_microusd > 0 {
+                    Some(p.initial_budget_microusd)
+                } else {
+                    None
+                },
                 max_turns: p.max_turns,
                 tool_policy: Some(tool_policy),
             }
