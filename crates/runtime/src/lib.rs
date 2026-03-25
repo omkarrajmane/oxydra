@@ -524,7 +524,7 @@ impl AgentRuntime {
 
                 if should_block {
                     tracing::warn!(turn, max_turns, "turn limit exceeded - stopping");
-                    return Err(RuntimeError::BudgetExceeded);
+                    return Err(RuntimeError::TurnLimitExceeded);
                 } else {
                     // SoftFail or ObserveOnly: log and emit event, but continue
                     let mode = policy.as_ref().map(|p| p.rollout_mode);
@@ -560,7 +560,7 @@ impl AgentRuntime {
                             now = %now,
                             "deadline exceeded - stopping"
                         );
-                        return Err(RuntimeError::BudgetExceeded);
+                        return Err(RuntimeError::DeadlineExceeded);
                     } else {
                         // SoftFail or ObserveOnly: log and emit event, but continue
                         tracing::warn!(

@@ -105,6 +105,22 @@ pub enum StopReason {
     Error(String),
 }
 
+impl std::fmt::Display for StopReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StopReason::Completed => write!(f, "completed"),
+            StopReason::Cancelled => write!(f, "cancelled"),
+            StopReason::MaxTurns => write!(f, "maximum turns exceeded"),
+            StopReason::MaxRuntimeExceeded => write!(f, "maximum runtime exceeded"),
+            StopReason::MaxBudgetExceeded => write!(f, "maximum budget exceeded"),
+            StopReason::ToolDisallowed => write!(f, "tool disallowed by policy"),
+            StopReason::ToolPermissionDenied => write!(f, "tool permission denied"),
+            StopReason::ProviderTimedOut => write!(f, "provider timed out"),
+            StopReason::Error(e) => write!(f, "{}", e),
+        }
+    }
+}
+
 /// How to handle policy violations during rollout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

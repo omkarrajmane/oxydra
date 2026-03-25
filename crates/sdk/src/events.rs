@@ -89,6 +89,18 @@ pub enum RunEvent {
         /// The stop reason category.
         stop_reason: StopReason,
     },
+    /// Token usage update from the provider.
+    Usage {
+        /// Number of prompt tokens used.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt_tokens: Option<u64>,
+        /// Number of completion tokens used.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        completion_tokens: Option<u64>,
+        /// Total tokens used.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total_tokens: Option<u64>,
+    },
     /// Run completed successfully.
     Completed(RunResult),
 }
@@ -160,5 +172,17 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("text"));
         assert!(json.contains("Hello"));
+    }
+
+    #[test]
+    fn test_run_event_usage_serialization() {
+        let event = RunEvent::Usage {
+            prompt_tokens: Some(10),
+            completion_tokens: Some(20),
+            total_tokens: Some(30),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: RunEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, deserialized);
     }
 }

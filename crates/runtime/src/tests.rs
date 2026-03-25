@@ -2084,7 +2084,7 @@ async fn run_session_errors_when_max_turn_budget_is_exceeded() {
         .run_session(&mut context, &CancellationToken::new())
         .await
         .expect_err("runtime should stop after max turn budget");
-    assert!(matches!(error, types::RuntimeError::BudgetExceeded));
+    assert!(matches!(error, types::RuntimeError::TurnLimitExceeded));
 }
 
 #[tokio::test]
@@ -4635,7 +4635,11 @@ async fn run_session_internal_enforces_deadline_before_provider_call() {
         .await;
 
     // Should fail with deadline exceeded
-    assert!(result.is_err(), "Expected error when deadline is exceeded");
+    let error = result.expect_err("Expected error when deadline is exceeded");
+    assert!(
+        matches!(error, types::RuntimeError::DeadlineExceeded),
+        "Expected DeadlineExceeded, got: {error:?}"
+    );
 }
 
 #[tokio::test]

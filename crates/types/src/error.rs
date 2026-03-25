@@ -109,4 +109,8 @@ pub enum RuntimeError {
     Cancelled,
     #[error("turn budget exceeded")]
     BudgetExceeded,
+    #[error("turn limit exceeded")]
+    TurnLimitExceeded,
+    #[error("deadline exceeded")]
+    DeadlineExceeded,
 }

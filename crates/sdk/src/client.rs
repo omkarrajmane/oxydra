@@ -12,7 +12,7 @@ use crate::policy::ClientConfig;
 use gateway::{GatewayServer, GatewayTurnRunner, TurnOrigin, UserTurnInput};
 use types::{
     ChannelCapabilities, MediaCapabilities, Response, RunPolicyInput, RuntimeError, StopReason,
-    StreamItem, UsageUpdate,
+    StreamItem,
 };
 
 /// Error type for SDK operations.
@@ -69,6 +69,12 @@ impl OxydraClient {
     /// This method creates a temporary session, runs the prompt through the
     /// runtime, and returns the final response. For multi-turn conversations,
     /// use the `stream` method instead.
+    ///
+    /// **Note:** Policy events (budget warnings, policy stops) are not available
+    /// in one-shot mode. Use [`stream()`](Self::stream) if you need to observe
+    /// policy events during execution. Policy limit violations (turn limit,
+    /// deadline, budget) are returned as part of the [`RunResult::stop_reason`]
+    /// field rather than as streaming events.
     pub async fn one_shot(
         &self,
         prompt: impl Into<String>,
@@ -150,6 +156,18 @@ impl OxydraClient {
                 Ok(run_result)
             }
             Err(RuntimeError::Cancelled) => Err(ClientError::Cancelled),
+            Err(RuntimeError::TurnLimitExceeded) => Ok(RunResult {
+                response: String::new(),
+                stop_reason: StopReason::MaxTurns,
+                usage: None,
+                tool_calls: vec![],
+            }),
+            Err(RuntimeError::DeadlineExceeded) => Ok(RunResult {
+                response: String::new(),
+                stop_reason: StopReason::MaxRuntimeExceeded,
+                usage: None,
+                tool_calls: vec![],
+            }),
             Err(e) => Err(ClientError::Runtime(e)),
         }
     }
@@ -241,6 +259,22 @@ impl OxydraClient {
                 Err(RuntimeError::Cancelled) => {
                     let _ = event_sender.send(InternalRunEvent::Error("cancelled".to_string()));
                 }
+                Err(RuntimeError::TurnLimitExceeded) => {
+                    let _ = event_sender.send(InternalRunEvent::Completed {
+                        response: String::new(),
+                        stop_reason: StopReason::MaxTurns,
+                        usage: None,
+                        tool_calls: vec![],
+                    });
+                }
+                Err(RuntimeError::DeadlineExceeded) => {
+                    let _ = event_sender.send(InternalRunEvent::Completed {
+                        response: String::new(),
+                        stop_reason: StopReason::MaxRuntimeExceeded,
+                        usage: None,
+                        tool_calls: vec![],
+                    });
+                }
                 Err(e) => {
                     let _ = event_sender.send(InternalRunEvent::Error(e.to_string()));
                 }
@@ -253,16 +287,11 @@ impl OxydraClient {
         tokio::spawn(async move {
             let mut delta_receiver = delta_receiver;
             let mut event_receiver = event_receiver;
-            let mut response_text = String::new();
-            let mut tool_calls: Vec<types::ToolCall> = Vec::new();
-            let mut _usage: Option<UsageUpdate> = None;
-
             loop {
                 tokio::select! {
                     Some(stream_item) = delta_receiver.recv() => {
                         match stream_item {
                             StreamItem::Text(text) => {
-                                response_text.push_str(&text);
                                 let _ = run_event_sender.send(RunEvent::Text(text));
                             }
                             StreamItem::ToolCallDelta(delta) => {
@@ -276,16 +305,14 @@ impl OxydraClient {
                                             .unwrap_or(serde_json::Value::Null),
                                         metadata: delta.metadata,
                                     };
-                                    tool_calls.push(tool_call.clone());
                                     let _ = run_event_sender.send(RunEvent::ToolCall(tool_call));
                                 }
                             }
                             StreamItem::UsageUpdate(u) => {
-                                _usage = Some(u.clone());
-                                let _ = run_event_sender.send(RunEvent::BudgetUpdate {
-                                    tokens_used: u.total_tokens.unwrap_or(0),
-                                    cost_microusd: 0, // Cost calculation would need model info
-                                    remaining_budget: None,
+                                let _ = run_event_sender.send(RunEvent::Usage {
+                                    prompt_tokens: u.prompt_tokens,
+                                    completion_tokens: u.completion_tokens,
+                                    total_tokens: u.total_tokens,
                                 });
                             }
                             StreamItem::Progress(_progress) => {
@@ -301,7 +328,7 @@ impl OxydraClient {
                                     }
                                     types::PolicyStreamEvent::PolicyStop { reason } => {
                                         let _ = run_event_sender.send(RunEvent::PolicyStop {
-                                            reason: format!("{:?}", reason),
+                                            reason: reason.to_string(),
                                             stop_reason: reason,
                                         });
                                     }
@@ -356,6 +383,8 @@ impl OxydraClient {
             StopReason::Cancelled
         } else if lower.contains("budget") {
             StopReason::MaxBudgetExceeded
+        } else if lower.contains("turn limit") {
+            StopReason::MaxTurns
         } else if lower.contains("deadline") || lower.contains("timeout") {
             StopReason::MaxRuntimeExceeded
         } else {
@@ -368,6 +397,7 @@ impl OxydraClient {
     /// One-shot responses currently only expose `finish_reason`, so this path
     /// cannot reliably infer richer policy stop reasons (budget/runtime/cancelled).
     /// TODO: Use `_policy` once one-shot responses include structured stop metadata.
+    /// See also: [`one_shot()`](Self::one_shot) doc comment on policy event limitations.
     fn determine_stop_reason(response: &Response, _policy: Option<&RunPolicyInput>) -> StopReason {
         if response.finish_reason.as_deref() == Some("max_tokens") {
             StopReason::MaxTurns
@@ -524,6 +554,12 @@ mod tests {
         let error = "provider failed with unknown issue";
         let stop_reason = OxydraClient::classify_stream_error(error);
         assert_eq!(stop_reason, StopReason::Error(error.to_string()));
+    }
+
+    #[test]
+    fn test_stream_error_turn_limit_maps_correctly() {
+        let stop_reason = OxydraClient::classify_stream_error("turn limit exceeded");
+        assert_eq!(stop_reason, StopReason::MaxTurns);
     }
 
     // Control plane method tests

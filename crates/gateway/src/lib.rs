@@ -1242,6 +1242,34 @@ impl GatewayServer {
                         message: RuntimeError::BudgetExceeded.to_string(),
                     })
                 }
+                Ok(Err(RuntimeError::TurnLimitExceeded)) => {
+                    tracing::warn!(turn_id = %send_turn.turn_id, "turn failed: turn limit exceeded");
+                    *session.stop_reason.lock().await =
+                        Some(types::policy::StopReason::MaxTurns);
+                    GatewayServerFrame::Error(GatewayErrorFrame {
+                        request_id: Some(send_turn.request_id.clone()),
+                        session: Some(session.gateway_session()),
+                        turn: Some(GatewayTurnStatus {
+                            turn_id: send_turn.turn_id.clone(),
+                            state: GatewayTurnState::Failed,
+                        }),
+                        message: RuntimeError::TurnLimitExceeded.to_string(),
+                    })
+                }
+                Ok(Err(RuntimeError::DeadlineExceeded)) => {
+                    tracing::warn!(turn_id = %send_turn.turn_id, "turn failed: deadline exceeded");
+                    *session.stop_reason.lock().await =
+                        Some(types::policy::StopReason::MaxRuntimeExceeded);
+                    GatewayServerFrame::Error(GatewayErrorFrame {
+                        request_id: Some(send_turn.request_id.clone()),
+                        session: Some(session.gateway_session()),
+                        turn: Some(GatewayTurnStatus {
+                            turn_id: send_turn.turn_id.clone(),
+                            state: GatewayTurnState::Failed,
+                        }),
+                        message: RuntimeError::DeadlineExceeded.to_string(),
+                    })
+                }
                 Ok(Err(error)) => {
                     tracing::warn!(
                         turn_id = %send_turn.turn_id,
